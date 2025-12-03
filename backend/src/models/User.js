@@ -23,7 +23,7 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      trim: true, 
+      trim: true,
     },
 
     password: {
@@ -34,9 +34,13 @@ const UserSchema = new mongoose.Schema(
 
     verified: {
       type: Boolean,
-      default: false, 
+      default: false,
     },
 
+    profileUrl: {
+      type: String,
+      default: null,
+    },
 
     isOnline: {
       type: Boolean,
@@ -51,8 +55,8 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+UserSchema.index({ username: 1 }, { unique: true });
 UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ phone: 1 }, { unique: true });
-UserSchema.index({ username: 1 }, { unique: true });
 
 module.exports = mongoose.model("User", UserSchema);

@@ -9,9 +9,14 @@ const {
 } = require("../controllers/AuthController");
 const AuthMiddleware = require("../middleware/AuthMiddleware");
 
+// multer upload middleware (ensure path matches your project)
+const upload = require("../middleware/upload");
+
 const router = express.Router();
 
-router.post("/register", register);
+// attach multer so req.file and req.body are populated for multipart/form-data
+router.post("/register", upload.single("profile"), register);
+
 router.post("/login", login);
 router.post("/verify-otp", verifyOtp);
 router.post("/resend-otp", resendOtp);
