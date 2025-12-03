@@ -30,10 +30,12 @@ const register = async (req, res) => {
     }
 
     const existsEmail = await User.findOne({ email });
-    if (existsEmail) return res.status(400).json({ message: "Email already registered" });
+    if (existsEmail)
+      return res.status(400).json({ message: "Email already registered" });
 
     const existsPhone = await User.findOne({ phone });
-    if (existsPhone) return res.status(400).json({ message: "Phone already registered" });
+    if (existsPhone)
+      return res.status(400).json({ message: "Phone already registered" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -77,13 +79,17 @@ const register = async (req, res) => {
 const verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
-    if (!phone || !otp) return res.status(400).json({ message: "Phone and OTP required" });
+    if (!phone || !otp)
+      return res.status(400).json({ message: "Phone and OTP required" });
 
     const check = await twilioClient.verify.v2
       .services(VERIFY_SID)
       .verificationChecks.create({ to: phone, code: otp });
 
-    if (check.status !== "approved") return res.status(400).json({ message: "Invalid or expired OTP" });
+    if (check.status !== "approved")
+      return res
+        .status(400)
+        .json({ message: "Invalid or expired OTP" });
 
     const user = await User.findOne({ phone });
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -113,7 +119,8 @@ const verifyOtp = async (req, res) => {
 const resendOtp = async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: "Phone is required" });
+    if (!phone)
+      return res.status(400).json({ message: "Phone is required" });
 
     const user = await User.findOne({ phone });
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -132,7 +139,10 @@ const resendOtp = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
-    if (!identifier || !password) return res.status(400).json({ message: "Email/Phone and password required" });
+    if (!identifier || !password)
+      return res
+        .status(400)
+        .json({ message: "Email/Phone and password required" });
 
     const user = await User.findOne({
       $or: [{ email: identifier }, { phone: identifier }],
@@ -141,7 +151,8 @@ const login = async (req, res) => {
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(400).json({ message: "Invalid credentials" });
+    if (!match)
+      return res.status(400).json({ message: "Invalid credentials" });
 
     if (!user.verified) {
       return res.status(403).json({
@@ -177,7 +188,8 @@ const resetPassword = async (req, res) => {
     if (!identifier || !otp || !newPassword || !confirmPassword) {
       return res.status(400).json({ message: "All fields required" });
     }
-    if (newPassword !== confirmPassword) return res.status(400).json({ message: "Passwords do not match" });
+    if (newPassword !== confirmPassword)
+      return res.status(400).json({ message: "Passwords do not match" });
 
     const user = await User.findOne({
       $or: [{ email: identifier }, { phone: identifier }],
@@ -188,7 +200,8 @@ const resetPassword = async (req, res) => {
       .services(VERIFY_SID)
       .verificationChecks.create({ to: user.phone, code: otp });
 
-    if (check.status !== "approved") return res.status(400).json({ message: "Invalid OTP" });
+    if (check.status !== "approved")
+      return res.status(400).json({ message: "Invalid OTP" });
 
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
@@ -202,8 +215,20 @@ const resetPassword = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
-    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
-    const { _id, username, email, phone, profileUrl, isOnline, lastSeen, verified } = req.user;
+    if (!req.user)
+      return res.status(401).json({ message: "Not authenticated" });
+
+    const {
+      _id,
+      username,
+      email,
+      phone,
+      profileUrl,
+      isOnline,
+      lastSeen,
+      verified,
+    } = req.user;
+
     return res.json({
       user: {
         id: _id,
@@ -222,6 +247,17 @@ const getMe = async (req, res) => {
   }
 };
 
+const logout = async (req, res) => {
+  try {
+    // With JWT, logout is client-side (remove token on frontend).
+    // This endpoint just gives a consistent response.
+    return res.json({ message: "Logged out successfully" });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   register,
   verifyOtp,
@@ -229,4 +265,5 @@ module.exports = {
   login,
   resetPassword,
   getMe,
+  logout,
 };

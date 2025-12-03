@@ -58,7 +58,8 @@ export default function Login() {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
       setMsg("Login successful. Redirecting...");
-      setTimeout(() => navigate("/"), 1000);
+      setTimeout(() => navigate("/home"), 1000);
+      
     } catch (err) {
       setMsg(err.response?.data?.message || "Login failed");
     }
