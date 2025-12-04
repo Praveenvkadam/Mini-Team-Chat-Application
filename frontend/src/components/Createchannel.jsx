@@ -1,21 +1,20 @@
-// src/components/CreateChannel.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 /**
  * CreateChannel.jsx
  *
- * - Shows a form: channel name, capacity, public/private.
- * - POSTs to /api/channels with JSON { name, isPrivate, capacity }.
- * - On success, shows a "channel view" header with channel name and members count.
- * - Provides Delete Channel button (DELETE /api/channels/:id).
+ * - Form: channel name, capacity, public/private
+ * - POST /api/channels -> { name, isPrivate, capacity }
+ * - On success shows simple channel view
+ * - Delete: DELETE /api/channels/:id
  *
- * Notes:
- * - Assumes JWT in localStorage.token
- * - Tailwind for styling
+ * Works both as:
+ * - standalone page
+ * - modal (via onClose prop)
  */
 
-export default function CreateChannel() {
+export default function CreateChannel({ onClose }) {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
@@ -28,17 +27,19 @@ export default function CreateChannel() {
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [channel, setChannel] = useState(null); // created channel object
+  const [channel, setChannel] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Create channel handler
+  // Create channel
   const handleCreate = async (e) => {
     e?.preventDefault();
     setError(null);
+
     if (!name.trim()) {
       setError("Channel name is required.");
       return;
     }
+
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/channels`, {
@@ -61,8 +62,7 @@ export default function CreateChannel() {
         return;
       }
 
-      // Expect backend to return created channel (with members array)
-      setChannel(data);
+      setChannel(data); // backend should return channel
       setLoading(false);
     } catch (err) {
       console.error("Create channel error:", err);
@@ -71,13 +71,14 @@ export default function CreateChannel() {
     }
   };
 
-  // Delete channel handler
+  // Delete channel
   const handleDelete = async () => {
     if (!channel) return;
-    const confirm = window.confirm(
+
+    const confirmDelete = window.confirm(
       `Delete channel "${channel.name}" permanently? This cannot be undone.`
     );
-    if (!confirm) return;
+    if (!confirmDelete) return;
 
     setDeleting(true);
     try {
@@ -95,10 +96,9 @@ export default function CreateChannel() {
         return;
       }
 
-      // success: navigate back to home or reset
       setDeleting(false);
       navigate("/");
-      // alternatively: setChannel(null) and refresh parent list if integrated
+      if (onClose) onClose();
     } catch (err) {
       console.error("Delete channel error:", err);
       setDeleting(false);
@@ -106,19 +106,20 @@ export default function CreateChannel() {
     }
   };
 
-  // Render: if channel exists show channel view, else show create form
+  // After create: simple channel view
   if (channel) {
     const membersCount = Array.isArray(channel.members)
       ? channel.members.length
-      : // some backends return membersCount or similar
-        channel.membersCount || 1;
+      : channel.membersCount || 1;
 
     return (
       <div className="max-w-3xl mx-auto">
         <div className="bg-white shadow rounded-2xl p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800">{channel.name}</h2>
+              <h2 className="text-2xl font-bold text-gray-800">
+                {channel.name}
+              </h2>
               <p className="text-sm text-gray-500 mt-1">
                 {membersCount} member{membersCount === 1 ? "" : "s"} joined
               </p>
@@ -126,7 +127,10 @@ export default function CreateChannel() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate(`/channel/${channel._id}`)}
+                onClick={() => {
+                  navigate("/home");
+                  if (onClose) onClose();
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 Open Channel
@@ -142,19 +146,33 @@ export default function CreateChannel() {
             </div>
           </div>
 
-          {/* Show some channel metadata */}
           <div className="mt-6 text-gray-700">
             <div className="flex gap-4">
               <div>
                 <span className="block text-xs text-gray-500">Visibility</span>
-                <div className="mt-1 font-medium">{channel.isPrivate ? "Private" : "Public"}</div>
+                <div className="mt-1 font-medium">
+                  {channel.isPrivate ? "Private" : "Public"}
+                </div>
               </div>
 
               <div>
                 <span className="block text-xs text-gray-500">Capacity</span>
-                <div className="mt-1 font-medium">{channel.capacity ?? "—"}</div>
+                <div className="mt-1 font-medium">
+                  {channel.capacity ?? "—"}
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Extra close for modal usage */}
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={() => onClose && onClose()}
+              className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -174,7 +192,9 @@ export default function CreateChannel() {
         {error && <div className="text-sm text-red-600">{error}</div>}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Channel name</label>
+          <label className="block text-sm font-medium text-gray-700">
+            Channel name
+          </label>
           <input
             type="text"
             value={name}
@@ -186,7 +206,9 @@ export default function CreateChannel() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Capacity (max members)</label>
+          <label className="block text-sm font-medium text-gray-700">
+            Capacity (max members)
+          </label>
           <input
             type="number"
             value={capacity}
@@ -204,14 +226,19 @@ export default function CreateChannel() {
               onChange={(e) => setIsPrivate(e.target.checked)}
               className="form-checkbox h-5 w-5 text-blue-600"
             />
-            <span className="text-sm text-gray-700">Private channel (invite-only)</span>
+            <span className="text-sm text-gray-700">
+              Private channel (invite-only)
+            </span>
           </label>
         </div>
 
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => {
+              if (onClose) onClose();
+              else navigate("/");
+            }}
             className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition"
           >
             Cancel

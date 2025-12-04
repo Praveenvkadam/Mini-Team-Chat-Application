@@ -1,4 +1,3 @@
-// src/context/SocketProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createSocket } from "../utils/socketClient";
 
@@ -16,7 +15,6 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
-      // no token — nothing to do. Provider still gives stable object.
       return;
     }
 

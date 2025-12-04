@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const http = require('http');
 const express = require('express');
@@ -8,31 +7,27 @@ const path = require('path');
 const fs = require('fs');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-
-// DB + Routers
 const connectDB = require('./src/db/connection');
 const AuthRouter = require('./src/routes/AuthRouter');
-const ChannelRouter = require('./src/routes/ChannelRouter');   // <-- IMPORTANT
+const ChannelRouter = require('./src/routes/ChannelRouter');   
 const setupSocketHandlers = require('./src/sockets/SignupHandler');
 const MessageRouter = require('./src/routes/messageRouter');
 
 const app = express();
 const server = http.createServer(app);
 
-// Ensure uploads dir exists
+
 const uploadsDir = path.join(__dirname, 'uploads', 'profiles');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Static uploads
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// CORS
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL;
 app.use(
   cors({
     origin: CLIENT_URL,
@@ -41,17 +36,14 @@ app.use(
   })
 );
 
-// Routes
 app.use('/api/auth', AuthRouter);
-app.use('/api/channels', ChannelRouter);   // <-- REGISTERED HERE
+app.use('/api/channels', ChannelRouter);   
 
 app.get('/', (req, res) => {
   res.json({ message: 'API running' });
 });
 
 app.use('/api/messages', MessageRouter);
-
-// SOCKET.IO SETUP
 const io = new Server(server, {
   cors: {
     origin: CLIENT_URL,
@@ -61,7 +53,6 @@ const io = new Server(server, {
   pingTimeout: 30000,
 });
 
-// Socket authentication middleware
 io.use((socket, next) => {
   try {
     const token =
@@ -81,10 +72,8 @@ io.use((socket, next) => {
   }
 });
 
-// Register socket events
 setupSocketHandlers(io);
 
-// Start server
 const PORT = process.env.PORT || 3002;
 
 connectDB()
@@ -98,7 +87,7 @@ connectDB()
     process.exit(1);
   });
 
-// Error handling
+
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });

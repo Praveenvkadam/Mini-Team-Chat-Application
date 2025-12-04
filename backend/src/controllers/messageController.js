@@ -1,6 +1,5 @@
 const Message = require('../models/Message');
 
-// GET /api/messages/:channelId?before=<iso>&limit=20
 exports.getMessages = async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -22,8 +21,6 @@ exports.getMessages = async (req, res) => {
   }
 };
 
-// POST /api/messages
-// body: { channelId, text }
 exports.postMessage = async (req, res) => {
   try {
     const { channelId, text } = req.body;
@@ -34,7 +31,6 @@ exports.postMessage = async (req, res) => {
     const msg = await Message.create({ channel: channelId, sender, text: String(text || '') });
     const populated = await msg.populate('sender', 'username');
 
-    // Optionally emit via socket if you have io instance (more work to wire)
     res.status(201).json(populated);
   } catch (err) {
     console.error('postMessage error', err);

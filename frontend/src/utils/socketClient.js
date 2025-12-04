@@ -1,4 +1,3 @@
-// src/utils/socketClient.js
 import { io } from "socket.io-client";
 
 export function createSocket(token) {

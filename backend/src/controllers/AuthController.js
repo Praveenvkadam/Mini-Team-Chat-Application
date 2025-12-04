@@ -3,14 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const User = require("../models/User");
 const { generateToken } = require("../utils/JWTToken");
-const twilio = require("twilio");
 const { generateInitialAvatar } = require("../utils/avatar");
-
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-const VERIFY_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
 function buildUploadUrl(req, filename) {
   if (!filename) return null;
@@ -51,17 +44,15 @@ const register = async (req, res) => {
       email,
       phone,
       password: hashedPassword,
-      verified: false,
+      verified: true, 
       profileUrl,
     });
 
-    await twilioClient.verify.v2
-      .services(VERIFY_SID)
-      .verifications.create({ to: phone, channel: "sms" });
+    const token = generateToken(user);
 
     return res.status(201).json({
-      message: "User created. OTP sent to phone",
-      phone,
+      message: "Account created successfully",
+      token,
       user: {
         id: user._id,
         username: user.username,
@@ -76,73 +67,11 @@ const register = async (req, res) => {
   }
 };
 
-const verifyOtp = async (req, res) => {
-  try {
-    const { phone, otp } = req.body;
-    if (!phone || !otp)
-      return res.status(400).json({ message: "Phone and OTP required" });
-
-    const check = await twilioClient.verify.v2
-      .services(VERIFY_SID)
-      .verificationChecks.create({ to: phone, code: otp });
-
-    if (check.status !== "approved")
-      return res
-        .status(400)
-        .json({ message: "Invalid or expired OTP" });
-
-    const user = await User.findOne({ phone });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    user.verified = true;
-    await user.save();
-
-    const token = generateToken(user);
-
-    return res.json({
-      message: "OTP verified. Login successful",
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        profileUrl: user.profileUrl,
-      },
-    });
-  } catch (err) {
-    console.error("Verify OTP error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
-
-const resendOtp = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    if (!phone)
-      return res.status(400).json({ message: "Phone is required" });
-
-    const user = await User.findOne({ phone });
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    await twilioClient.verify.v2
-      .services(VERIFY_SID)
-      .verifications.create({ to: phone, channel: "sms" });
-
-    return res.json({ message: "OTP resent" });
-  } catch (err) {
-    console.error("Resend OTP error:", err);
-    return res.status(500).json({ message: "Failed to resend OTP" });
-  }
-};
-
 const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
     if (!identifier || !password)
-      return res
-        .status(400)
-        .json({ message: "Email/Phone and password required" });
+      return res.status(400).json({ message: "Email/Phone and password required" });
 
     const user = await User.findOne({
       $or: [{ email: identifier }, { phone: identifier }],
@@ -151,17 +80,7 @@ const login = async (req, res) => {
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     const match = await bcrypt.compare(password, user.password);
-    if (!match)
-      return res.status(400).json({ message: "Invalid credentials" });
-
-    if (!user.verified) {
-      return res.status(403).json({
-        message: "Account not verified. Complete OTP first.",
-        requireOtp: true,
-        phone: user.phone,
-        profileUrl: user.profileUrl,
-      });
-    }
+    if (!match) return res.status(400).json({ message: "Invalid credentials" });
 
     const token = generateToken(user);
 
@@ -184,10 +103,10 @@ const login = async (req, res) => {
 
 const resetPassword = async (req, res) => {
   try {
-    const { identifier, otp, newPassword, confirmPassword } = req.body;
-    if (!identifier || !otp || !newPassword || !confirmPassword) {
+    const { identifier, newPassword, confirmPassword } = req.body;
+    if (!identifier || !newPassword || !confirmPassword)
       return res.status(400).json({ message: "All fields required" });
-    }
+
     if (newPassword !== confirmPassword)
       return res.status(400).json({ message: "Passwords do not match" });
 
@@ -195,13 +114,6 @@ const resetPassword = async (req, res) => {
       $or: [{ email: identifier }, { phone: identifier }],
     });
     if (!user) return res.status(404).json({ message: "User not found" });
-
-    const check = await twilioClient.verify.v2
-      .services(VERIFY_SID)
-      .verificationChecks.create({ to: user.phone, code: otp });
-
-    if (check.status !== "approved")
-      return res.status(400).json({ message: "Invalid OTP" });
 
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
@@ -215,8 +127,7 @@ const resetPassword = async (req, res) => {
 
 const getMe = async (req, res) => {
   try {
-    if (!req.user)
-      return res.status(401).json({ message: "Not authenticated" });
+    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
 
     const {
       _id,
@@ -249,8 +160,6 @@ const getMe = async (req, res) => {
 
 const logout = async (req, res) => {
   try {
-    // With JWT, logout is client-side (remove token on frontend).
-    // This endpoint just gives a consistent response.
     return res.json({ message: "Logged out successfully" });
   } catch (err) {
     console.error("Logout error:", err);
@@ -258,12 +167,77 @@ const logout = async (req, res) => {
   }
 };
 
+const updateProfile = async (req, res) => {
+  try {
+    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
+
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const { username, email, phone } = req.body;
+
+    if (username && username.trim() !== "") user.username = username.trim();
+
+    if (email && email.trim() !== "" && email !== user.email) {
+      const existsEmail = await User.findOne({ email: email.trim() });
+      if (existsEmail && existsEmail._id.toString() !== user._id.toString())
+        return res.status(400).json({ message: "Email already in use" });
+
+      user.email = email.trim();
+    }
+
+    if (phone && phone.trim() !== "" && phone !== user.phone) {
+      const existsPhone = await User.findOne({ phone: phone.trim() });
+      if (existsPhone && existsPhone._id.toString() !== user._id.toString())
+        return res.status(400).json({ message: "Phone already in use" });
+
+      user.phone = phone.trim();
+    }
+
+    if (req.file && req.file.filename) {
+      const newProfileUrl = buildUploadUrl(req, req.file.filename);
+
+      try {
+        if (
+          user.profileUrl &&
+          typeof user.profileUrl === "string" &&
+          user.profileUrl.includes("/uploads/profiles/")
+        ) {
+          const prevFilename = path.basename(user.profileUrl);
+          const prevPath = path.join(process.cwd(), "uploads", "profiles", prevFilename);
+          if (fs.existsSync(prevPath)) fs.unlink(prevPath, () => {});
+        }
+      } catch (_) {}
+
+      user.profileUrl = newProfileUrl;
+    }
+
+    await user.save();
+
+    const token = generateToken(user);
+
+    return res.json({
+      message: "Profile updated",
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        profileUrl: user.profileUrl,
+      },
+    });
+  } catch (err) {
+    console.error("Update profile error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   register,
-  verifyOtp,
-  resendOtp,
   login,
   resetPassword,
   getMe,
   logout,
+  updateProfile,
 };

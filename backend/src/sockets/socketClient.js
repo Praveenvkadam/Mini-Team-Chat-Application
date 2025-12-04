@@ -1,15 +1,11 @@
-// src/utils/socketClient.js
 import { io } from 'socket.io-client';
 
-// token getter: tries localStorage then cookie
 function getToken() {
-  // 1) localStorage (common)
   try {
     const t = localStorage.getItem('token');
     if (t) return t;
   } catch (e) {}
 
-  // 2) cookie fallback (expects "token=...")
   try {
     const matches = document.cookie.match(/(?:^|; )token=([^;]+)/);
     if (matches) return matches[1];

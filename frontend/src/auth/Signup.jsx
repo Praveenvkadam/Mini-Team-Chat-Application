@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
@@ -15,7 +15,6 @@ const countryCodes = [
 export default function Signup() {
   const navigate = useNavigate();
   const [countryCode, setCountryCode] = useState("+91");
-
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -23,13 +22,10 @@ export default function Signup() {
     password: "",
     confirmPassword: "",
   });
-
   const [profileFile, setProfileFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
-
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -70,7 +66,7 @@ export default function Signup() {
       return;
     }
 
-    const maxSize = 2 * 1024 * 1024; // 2MB
+    const maxSize = 2 * 1024 * 1024;
     if (file.size > maxSize) {
       setMsg("Profile image must be <= 2MB");
       e.target.value = "";
@@ -112,48 +108,75 @@ export default function Signup() {
       fd.append("phone", phoneE164);
       fd.append("password", form.password);
       fd.append("confirmPassword", form.confirmPassword);
+      if (profileFile) fd.append("profile", profileFile);
 
-      if (profileFile) {
-        fd.append("profile", profileFile);
-      }
-
-      const res = await axios.post(`${API_BASE}/api/auth/register`, fd, {
+      console.debug("POSTing to", `${API_BASE}/api/auth/register`, {
+        phone: phoneE164,
+        username: form.username,
+        email: form.email,
+        file: profileFile ? profileFile.name : null,
       });
 
-      const pendingPhone = res.data?.phone || phoneE164;
-      localStorage.setItem("pendingPhone", pendingPhone);
+      const res = await axios.post(`${API_BASE}/api/auth/register`, fd, {
+        timeout: 30000,
+      });
 
-      if (res.data?.user?.profileUrl) {
-        localStorage.setItem("pendingProfileUrl", res.data.user.profileUrl);
+      console.log("signup response:", res);
+
+      const token = res.data?.token;
+      const user = res.data?.user;
+
+      if (token && user) {
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
       }
 
-      setMsg("OTP sent — redirecting...");
-      setTimeout(() => navigate("/verifyotp"), 700);
+      setMsg("Account created successfully. Redirecting...");
+      setTimeout(() => navigate("/"), 800);
     } catch (err) {
+      console.error("signup error full:", err);
+      console.error("err.response:", err?.response);
+      console.error("err.request:", err?.request);
+      console.error("err.message:", err?.message);
+
       const backendMessage =
         err?.response?.data?.message ||
         (Array.isArray(err?.response?.data?.errors)
           ? err.response.data.errors.map((x) => x.msg).join(", ")
           : null);
 
-      setMsg(backendMessage || "Signup failed");
+      setMsg(backendMessage || `Network error: ${err.message || "no response"}`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="bg-white shadow-md rounded-xl p-6 w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-4 text-center">Create Account</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-700 via-slate-900 to-slate-950 px-4">
+      <div className="w-full max-w-md bg-white/10 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl p-8">
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-semibold text-white tracking-tight">
+            Create Account
+          </h1>
+          <p className="mt-2 text-sm text-slate-200/80">
+            Join the team chat and stay in sync with your crew.
+          </p>
+        </div>
 
-        <form className="space-y-4" onSubmit={submit} encType="multipart/form-data">
-          <div className="flex items-center gap-3">
-            <div className="flex-1">
+        <form
+          className="space-y-4"
+          onSubmit={submit}
+          encType="multipart/form-data"
+        >
+          <div className="flex items-center gap-4">
+            <div className="flex-1 space-y-1">
+              <label className="block text-xs font-medium text-slate-200/80">
+                Username
+              </label>
               <input
                 name="username"
-                placeholder="Username"
-                className="w-full border p-2 rounded"
+                placeholder="Enter your username"
+                className="w-full text-sm rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2.5 text-slate-100 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
                 value={form.username}
                 onChange={updateField}
                 autoComplete="name"
@@ -163,13 +186,17 @@ export default function Signup() {
             <div className="flex flex-col items-center">
               <label
                 htmlFor="profile"
-                className="w-14 h-14 rounded-md overflow-hidden bg-gray-200 cursor-pointer flex items-center justify-center text-sm text-gray-600 border"
+                className="w-16 h-16 rounded-xl overflow-hidden bg-slate-800/60 cursor-pointer flex items-center justify-center text-xs text-slate-300 border border-dashed border-slate-500/60 hover:border-indigo-400 hover:bg-slate-800/90 transition"
                 title="Upload profile (optional)"
               >
                 {previewUrl ? (
-                  <img src={previewUrl} alt="preview" className="w-full h-full object-cover" />
+                  <img
+                    src={previewUrl}
+                    alt="preview"
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <span className="select-none">Add</span>
+                  <span className="select-none">Add photo</span>
                 )}
               </label>
               <input
@@ -180,97 +207,142 @@ export default function Signup() {
                 onChange={onFileChange}
                 className="hidden"
               />
-              <small className="text-xs text-gray-500 mt-1">optional</small>
+              <small className="text-[10px] text-slate-300/80 mt-1">
+                Profile picture
+              </small>
             </div>
           </div>
 
-          <input
-            name="email"
-            type="email"
-            placeholder="Email"
-            className="w-full border p-2 rounded"
-            value={form.email}
-            onChange={updateField}
-            autoComplete="email"
-          />
-
-          <div className="flex gap-2">
-            <select
-              className="border p-2 rounded"
-              value={countryCode}
-              onChange={(e) => setCountryCode(e.target.value)}
-            >
-              {countryCodes.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.label} {c.code}
-                </option>
-              ))}
-            </select>
-
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-200/80">
+              Email
+            </label>
             <input
-              name="phone"
-              placeholder="Phone number"
-              className="flex-1 border p-2 rounded"
-              value={form.phone}
+              name="email"
+              type="email"
+              placeholder="you@example.com"
+              className="w-full text-sm rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2.5 text-slate-100 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+              value={form.email}
               onChange={updateField}
-              inputMode="tel"
-              autoComplete="tel"
+              autoComplete="email"
             />
           </div>
 
-          <div className="relative">
-            <input
-              name="password"
-              type={showPassword ? "text" : "password"}
-              placeholder="Password"
-              className="w-full border p-2 rounded pr-10"
-              value={form.password}
-              onChange={updateField}
-              autoComplete="new-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-              aria-label="Toggle password visibility"
-            >
-              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-200/80">
+              Phone Number
+            </label>
+            <div className="flex gap-2">
+              <select
+                className="text-sm rounded-xl border border-white/10 bg-slate-900/60 px-2.5 py-2.5 text-slate-100 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+              >
+                {countryCodes.map((c) => (
+                  <option
+                    key={c.code}
+                    value={c.code}
+                    className="bg-slate-900 text-slate-100"
+                  >
+                    {c.label} {c.code}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                name="phone"
+                placeholder="Phone number"
+                className="flex-1 text-sm rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2.5 text-slate-100 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+                value={form.phone}
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, "");
+                  setForm((s) => ({ ...s, phone: digits }));
+                }}
+                inputMode="tel"
+                autoComplete="tel"
+              />
+            </div>
           </div>
 
-          <div className="relative">
-            <input
-              name="confirmPassword"
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder="Confirm Password"
-              className="w-full border p-2 rounded pr-10"
-              value={form.confirmPassword}
-              onChange={updateField}
-            />
-            <button
-              type="button"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
-              aria-label="Toggle confirm password visibility"
-            >
-              {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-            </button>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-200/80">
+              Password
+            </label>
+            <div className="relative">
+              <input
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Create a strong password"
+                className="w-full text-sm rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2.5 pr-10 text-slate-100 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+                value={form.password}
+                onChange={updateField}
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-slate-300 hover:text-white transition"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-200/80">
+              Confirm Password
+            </label>
+            <div className="relative">
+              <input
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="Re-enter password"
+                className="w-full text-sm rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2.5 pr-10 text-slate-100 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition"
+                value={form.confirmPassword}
+                onChange={updateField}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setShowConfirmPassword(!showConfirmPassword)
+                }
+                className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer text-slate-300 hover:text-white transition"
+                aria-label="Toggle confirm password visibility"
+              >
+                {showConfirmPassword ? (
+                  <EyeOff size={18} />
+                ) : (
+                  <Eye size={18} />
+                )}
+              </button>
+            </div>
           </div>
 
           <button
             disabled={loading}
-            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700 disabled:opacity-50"
+            className="mt-2 w-full rounded-xl bg-indigo-500 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-900/40 hover:bg-indigo-400 active:bg-indigo-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? "Sending OTP..." : "Sign Up"}
+            {loading ? "Creating account..." : "Sign Up"}
           </button>
 
-          <p className="text-center text-sm mt-2">
-            Already registered? <Link to="/login" className="text-blue-600">Login</Link>
+          <p className="text-center text-xs mt-3 text-slate-200/80">
+            Already registered?{" "}
+            <Link
+              to="/"
+              className="font-medium text-indigo-300 hover:text-indigo-200 underline underline-offset-4"
+            >
+              Login
+            </Link>
           </p>
 
           {msg && (
             <p
-              className={`text-center text-sm mt-2 ${msg.toLowerCase().includes("sent") || msg.toLowerCase().includes("success") ? "text-green-600" : "text-red-600"}`}
+              className={`text-center text-xs mt-3 ${
+                msg.toLowerCase().includes("success")
+                  ? "text-emerald-300"
+                  : "text-rose-300"
+              }`}
             >
               {msg}
             </p>

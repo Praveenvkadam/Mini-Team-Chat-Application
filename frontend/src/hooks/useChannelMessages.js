@@ -1,4 +1,3 @@
-// src/hooks/useChannelMessages.js
 import { useEffect, useRef, useState } from 'react';
 import { useSocket } from '../context/SocketProvider';
 
@@ -9,7 +8,6 @@ export default function useChannelMessages(channelId, initialLoad = 30) {
   const [hasMore, setHasMore] = useState(true);
   const oldestRef = useRef(null);
 
-  // Fetch initial messages + join channel
   useEffect(() => {
     if (!channelId || !socket) return;
     let mounted = true;
@@ -54,7 +52,6 @@ export default function useChannelMessages(channelId, initialLoad = 30) {
     };
   }, [channelId, socket, initialLoad]);
 
-  // Pagination load older messages
   const loadMore = async (limit = 20) => {
     if (!channelId || !oldestRef.current || !hasMore) return;
 
@@ -83,7 +80,6 @@ export default function useChannelMessages(channelId, initialLoad = 30) {
     }
   };
 
-  // send message
   const sendMessage = ({ text, attachments }) => {
     if (!socket) return;
 

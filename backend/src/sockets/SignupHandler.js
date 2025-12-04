@@ -1,28 +1,13 @@
-// src/sockets/SignupHandler.js
 const Message = require('../models/Message');
 const Channel = require('../models/Channel');
 const User = require('../models/User');
 
-/**
- * Socket handler with:
- * - multi-tab presence tracking
- * - join/leave rooms
- * - message create/update/delete
- * - typing indicator
- *
- * NOTE: This is single-server (in-memory maps). If you deploy multiple instances,
- * you MUST use a Redis adapter and move presence tracking to Redis.
- */
 module.exports = function setupSocketHandlers(io) {
-  // userId -> Set(socketId)
   const userSockets = new Map();
-
-  // Simple per-user rate limiter placeholder: you should replace with robust implementation
-  const lastMessageAt = new Map(); // userId -> timestamp(ms)
-  const MESSAGE_MIN_INTERVAL = 300; // ms between messages (quick throttle)
+  const lastMessageAt = new Map(); 
+  const MESSAGE_MIN_INTERVAL = 300; 
 
   io.on('connection', (socket) => {
-    // require socket.user presence (your auth middleware should set it)
     const user = socket.user;
     if (!user || !user.id) {
       socket.disconnect(true);
@@ -30,20 +15,16 @@ module.exports = function setupSocketHandlers(io) {
     }
     const uid = String(user.id);
 
-    // add socket to user map
     if (!userSockets.has(uid)) userSockets.set(uid, new Set());
     userSockets.get(uid).add(socket.id);
 
-    // mark online only when first socket connects
     if (userSockets.get(uid).size === 1) {
       User.findByIdAndUpdate(uid, { isOnline: true, lastSeen: new Date() }).exec().catch(()=>{});
       io.emit('presence:update', { userId: uid, isOnline: true });
     }
 
-    // Logging
     console.log('Socket connected', uid, socket.id);
 
-    // JOIN channel
     socket.on('join:channel', async ({ channelId } = {}) => {
       if (!channelId) return socket.emit('error', { code: 'NO_CHANNEL', message: 'channelId required' });
       try {
@@ -57,14 +38,12 @@ module.exports = function setupSocketHandlers(io) {
       }
     });
 
-    // LEAVE channel
     socket.on('leave:channel', ({ channelId } = {}) => {
       if (!channelId) return;
       socket.leave(`channel:${channelId}`);
       socket.emit('left:channel', { channelId });
     });
 
-    // New message: validate, throttle, persist, broadcast
     socket.on('message:new', async (payload) => {
       try {
         const now = Date.now();
@@ -79,10 +58,6 @@ module.exports = function setupSocketHandlers(io) {
         if ((!text || !String(text).trim()) && (!attachments || attachments.length === 0)) {
           return socket.emit('error', { code: 'EMPTY_MESSAGE', message: 'Message empty' });
         }
-
-        // Optional: validate user is a member of private channel here
-        // const channel = await Channel.findById(channelId);
-        // if (channel.isPrivate && !channel.members.includes(uid)) return socket.emit('error', ...)
 
         const msg = await Message.create({
           channel: channelId,
@@ -100,13 +75,11 @@ module.exports = function setupSocketHandlers(io) {
       }
     });
 
-    // Typing indicator
     socket.on('typing', ({ channelId, isTyping = true } = {}) => {
       if (!channelId) return;
       socket.to(`channel:${channelId}`).emit('typing', { userId: uid, isTyping });
     });
 
-    // Update message (only sender)
     socket.on('message:update', async ({ messageId, text } = {}) => {
       try {
         if (!messageId) return socket.emit('error', { code: 'NO_MSG_ID', message: 'messageId required' });
@@ -122,7 +95,6 @@ module.exports = function setupSocketHandlers(io) {
       }
     });
 
-    // Delete message (only sender)
     socket.on('message:delete', async ({ messageId } = {}) => {
       try {
         if (!messageId) return socket.emit('error', { code: 'NO_MSG_ID', message: 'messageId required' });
@@ -137,7 +109,6 @@ module.exports = function setupSocketHandlers(io) {
       }
     });
 
-    // Disconnect
     socket.on('disconnect', () => {
       const set = userSockets.get(uid);
       if (set) {

@@ -1,30 +1,40 @@
-// src/components/ChannelView.jsx
 import React, { useEffect, useRef, useState } from "react";
+import EmojiPicker from "emoji-picker-react";
 
 export default function ChannelView({ channel, onRemoved }) {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
   const token = localStorage.getItem("token");
 
   const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [members, setMembers] = useState(channel.members || []);
   const [messageText, setMessageText] = useState("");
-  const [membersCount, setMembersCount] = useState(channel.members ? channel.members.length : 0);
+  const [loading, setLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
 
   const listRef = useRef(null);
 
-  // fetch latest messages (initial)
   const fetchMessages = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/messages/${channel._id}?limit=50`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch messages");
+      const res = await fetch(
+        `${API_URL}/api/messages/${channel._id}?limit=50`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) {
+        setMessages([]);
+        return;
+      }
       const data = await res.json();
-      // server returns newest-first usually; ensure oldest->newest for display
-      const msgs = Array.isArray(data) ? data.reverse() : (data.messages || []).reverse();
-      setMessages(msgs);
+      const arr = Array.isArray(data) ? data : data.messages || [];
+      setMessages(arr.reverse());
+      setTimeout(() => {
+        if (listRef.current) {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+      }, 50);
     } catch (err) {
       console.error("fetchMessages error:", err);
     } finally {
@@ -32,17 +42,31 @@ export default function ChannelView({ channel, onRemoved }) {
     }
   };
 
+  const fetchMembers = async () => {
+    try {
+      const res = await fetch(
+        `${API_URL}/api/channels/${channel._id}/members`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      setMembers(data.members || []);
+    } catch (err) {
+      console.error("fetchMembers error:", err);
+    }
+  };
+
   useEffect(() => {
     fetchMessages();
-    // sync members count from channel object if provided
-    if (channel.members) setMembersCount(channel.members.length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchMembers();
   }, [channel._id]);
 
-  // simple send message (via REST). Replace with socket emit if using sockets.
   const sendMessage = async () => {
     const text = (messageText || "").trim();
     if (!text) return;
+
     try {
       const res = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
@@ -52,40 +76,41 @@ export default function ChannelView({ channel, onRemoved }) {
         },
         body: JSON.stringify({ channelId: channel._id, text }),
       });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Send failed");
-        return;
-      }
+
+      if (!res.ok) return;
+
       const saved = await res.json();
       setMessages((prev) => [...prev, saved]);
       setMessageText("");
-      // scroll down
+      setShowEmoji(false);
+
       setTimeout(() => {
-        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+        if (listRef.current) {
+          listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
       }, 50);
     } catch (err) {
       console.error("sendMessage error:", err);
     }
   };
 
-  // delete channel (creator only)
   const deleteChannel = async () => {
-    const confirm = window.confirm(`Delete channel "${channel.name}"? This is permanent.`);
-    if (!confirm) return;
+    if (!window.confirm("Delete channel permanently?")) return;
+
     try {
       setIsDeleting(true);
       const res = await fetch(`${API_URL}/api/channels/${channel._id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+
       if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || "Delete failed");
+        const d = await res.json();
+        alert(d.error || "Delete failed");
         setIsDeleting(false);
         return;
       }
-      // notify parent
+
       onRemoved(channel._id);
     } catch (err) {
       console.error("deleteChannel error:", err);
@@ -93,72 +118,106 @@ export default function ChannelView({ channel, onRemoved }) {
     }
   };
 
+  const onlineCount = members.filter((m) => m.isOnline).length;
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b pb-4 mb-4">
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between mb-3">
         <div>
-          <h2 className="text-2xl font-bold">{channel.name}</h2>
-          <div className="text-sm text-gray-600">{membersCount} member{membersCount !== 1 ? "s" : ""}</div>
+          <h3 className="text-2xl font-semibold">{channel.name}</h3>
+          <div className="text-sm text-gray-500">
+            {onlineCount} online • {members.length} total
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={fetchMessages}
-            className="px-3 py-1 rounded-md border"
-            title="Refresh messages"
+            className="px-3 py-1 border rounded text-sm"
           >
             Refresh
           </button>
           <button
-            onClick={() => window.location.reload()}
-            className="px-3 py-1 rounded-md bg-gray-100"
-            title="Reload page"
-          >
-            Reload
-          </button>
-          <button
             onClick={deleteChannel}
+            className="px-3 py-1 bg-red-50 text-red-600 rounded border text-sm"
             disabled={isDeleting}
-            className="px-3 py-1 rounded-md bg-red-50 text-red-600 border"
-            title="Delete channel"
           >
-            {isDeleting ? "Deleting..." : "Delete"}
+            {isDeleting ? "Deleting..." : "Delete Channel"}
           </button>
         </div>
       </div>
 
-      {/* Message list */}
-      <div ref={listRef} className="flex-1 overflow-auto p-2 space-y-3">
-        {loading ? (
-          <div className="text-center text-gray-500">Loading messages...</div>
-        ) : messages.length === 0 ? (
-          <div className="text-center text-gray-500">No messages yet</div>
-        ) : (
-          messages.map((m) => (
-            <div key={m._id || m.createdAt} className="p-3 rounded-lg bg-gray-100">
-              <div className="flex items-center justify-between">
-                <div className="font-medium text-sm">{m.sender?.username || m.sender?.name || "User"}</div>
-                <div className="text-xs text-gray-500">{new Date(m.createdAt).toLocaleString()}</div>
-              </div>
-              <div className="mt-2 text-sm whitespace-pre-wrap">{m.text}</div>
-            </div>
-          ))
+      <div
+        ref={listRef}
+        className="flex-1 overflow-auto p-2 space-y-3 bg-white/60 rounded-lg border"
+      >
+        {loading && (
+          <div className="text-center text-gray-500">Loading...</div>
         )}
+        {messages.length === 0 && !loading && (
+          <div className="text-center text-gray-500">No messages yet</div>
+        )}
+
+        {messages.map((m) => (
+          <div
+            key={m._id || m.createdAt}
+            className="p-3 rounded-lg bg-gray-100"
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-sm">
+                {m.sender?.username || "User"}
+              </div>
+              <div className="text-xs text-gray-500">
+                {new Date(m.createdAt).toLocaleTimeString()}
+              </div>
+            </div>
+            <div className="mt-2 text-sm whitespace-pre-wrap">{m.text}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Composer */}
-      <div className="mt-4 pt-4 border-t">
-        <div className="flex gap-2">
-          <input
-            type="text"
+      <div className="mt-3 border-t border-gray-200 pt-3 relative">
+        {showEmoji && (
+          <div className="absolute bottom-16 left-0 z-50">
+            <EmojiPicker
+              onEmojiClick={(emojiObj) =>
+                setMessageText((prev) => (prev || "") + emojiObj.emoji)
+              }
+              theme="light"
+              width={320}
+              height={420}
+            />
+          </div>
+        )}
+
+        <div className="flex items-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowEmoji((v) => !v)}
+            className="px-2 py-2 text-xl border rounded-lg bg-white hover:bg-gray-100"
+          >
+            😀
+          </button>
+
+          <textarea
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
             placeholder="Type a message..."
-            className="flex-1 p-3 border rounded-lg outline-none"
-            onKeyDown={(e) => { if (e.key === "Enter") sendMessage(); }}
+            rows={2}
+            className="flex-1 border rounded-lg px-3 py-2 text-sm leading-relaxed resize-none min-h-[56px] max-h-32 overflow-y-auto focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-blue-500"
           />
-          <button onClick={sendMessage} className="px-4 py-2 bg-blue-600 text-white rounded-lg">
+
+          <button
+            onClick={sendMessage}
+            disabled={!messageText.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
             Send
           </button>
         </div>
