@@ -1,4 +1,10 @@
-import React, {useCallback,useEffect,useMemo,useRef,useState,} from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import ChannelView from "../components/ChannelView";
@@ -88,7 +94,7 @@ export default function Home() {
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
-  const [joinChannelInput, setJoinChannelInput] = useState(""); // name or id
+  const [joinChannelInput, setJoinChannelInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -150,7 +156,7 @@ export default function Home() {
         return;
       }
 
-      const data = await res.json(); 
+      const data = await res.json();
       setChannels(data.channels || []);
       setSelectedChannel((prev) =>
         prev ? prev : (data.channels && data.channels[0]) || null
@@ -290,7 +296,7 @@ export default function Home() {
         type="button"
         aria-label="Open channels"
         onClick={() => setMobileLeftOpen((v) => !v)}
-        className="md:hidden fixed left-3 top-20 z-50 p-2 rounded-lg bg-white/12 text-white shadow"
+        className="md:hidden fixed left-3 top-20 z-50 p-2 rounded-lg bg-white text-gray-800 shadow"
       >
         <MenuIcon />
       </button>
@@ -299,7 +305,7 @@ export default function Home() {
         type="button"
         aria-label="Open members"
         onClick={() => setMobileRightOpen((v) => !v)}
-        className="md:hidden fixed right-3 top-20 z-50 p-2 rounded-lg bg-white/12 text-white shadow"
+        className="md:hidden fixed right-3 top-20 z-50 p-2 rounded-lg bg-white text-gray-800 shadow"
       >
         <UsersIcon />
       </button>
@@ -308,14 +314,14 @@ export default function Home() {
         <div className="flex items-start gap-6">
           {/* LEFT SIDEBAR - desktop */}
           <aside className="hidden md:block md:w-72 lg:w-80">
-            <div className="bg-white/10 rounded-lg p-4 h=[calc(100vh-96px)] md:h-[calc(100vh-96px)] h-[calc(100vh-96px)] overflow-auto">
+            <div className="bg-white rounded-lg p-4 h-[calc(100vh-96px)] overflow-auto">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white font-semibold">Channels</h3>
+                <h3 className="text-gray-900 font-semibold">Channels</h3>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={fetchChannels}
-                    className="text-sm bg-white/20 px-2 py-1 rounded flex items-center gap-2 text-white"
+                    className="text-sm bg-gray-200 px-2 py-1 rounded flex items-center gap-2 text-gray-800"
                   >
                     <RefreshIcon /> Refresh
                   </button>
@@ -332,7 +338,7 @@ export default function Home() {
                     placeholder="Search by channel name"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    className="pl-10 pr-3 py-2 w-full rounded bg-white/5 text-white placeholder-white/60"
+                    className="pl-10 pr-3 py-2 w-full rounded bg-gray-100 text-gray-800 placeholder-gray-400"
                   />
                 </label>
               </div>
@@ -342,12 +348,12 @@ export default function Home() {
                   {[1, 2, 3].map((i) => (
                     <div
                       key={i}
-                      className="animate-pulse bg-white/5 h-14 rounded"
+                      className="animate-pulse bg-gray-200 h-14 rounded"
                     />
                   ))}
                 </div>
               ) : filteredChannels.length === 0 ? (
-                <div className="text-white/80">No channels yet</div>
+                <div className="text-gray-700">No channels yet</div>
               ) : (
                 <ul className="space-y-3">
                   {filteredChannels.map((ch) => {
@@ -359,20 +365,20 @@ export default function Home() {
                         onClick={() => setSelectedChannel(ch)}
                         className={`p-3 rounded-lg cursor-pointer ${
                           active
-                            ? "bg-white/30"
-                            : "bg-white/10 hover:bg-white/20"
+                            ? "bg-blue-200"
+                            : "bg-gray-100 hover:bg-gray-200"
                         }`}
                       >
                         <div className="flex justify-between items-center">
                           <div>
-                            <div className="text-white font-medium truncate">
+                            <div className="text-gray-900 font-medium truncate">
                               {ch.name}
                             </div>
-                            <div className="text-xs text-white/70 truncate">
+                            <div className="text-xs text-gray-600 truncate">
                               ID: {short(ch._id)}
                             </div>
                           </div>
-                          <div className="text-xs bg-white text-blue-700 px-2 py-0.5 rounded-full ml-3">
+                          <div className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full ml-3">
                             {Array.isArray(ch.members)
                               ? ch.members.length
                               : "—"}
@@ -384,13 +390,13 @@ export default function Home() {
                 </ul>
               )}
 
-              <div className="mt-4 pt-3 border-t border-white/10">
+              <div className="mt-4 pt-3 border-t border-gray-300">
                 <div className="flex gap-2">
                   <input
                     value={joinChannelInput}
                     onChange={(e) => setJoinChannelInput(e.target.value)}
                     placeholder="Channel name or ID"
-                    className="flex-1 p-2 border rounded bg-white/5 text-white placeholder-white/60"
+                    className="flex-1 p-2 border rounded bg-gray-100 text-gray-800 placeholder-gray-400"
                   />
                   <button
                     type="button"
@@ -403,7 +409,7 @@ export default function Home() {
               </div>
 
               {error && (
-                <div className="mt-3 text-sm text-red-400">{error}</div>
+                <div className="mt-3 text-sm text-red-600">{error}</div>
               )}
             </div>
           </aside>
@@ -420,17 +426,17 @@ export default function Home() {
                 aria-label="Channels"
                 ref={drawerRef}
                 tabIndex={-1}
-                className="absolute left-3 top-20 w-[86%] max-w-xs bg-white/6 rounded-lg p-4 shadow-lg h-[calc(100vh-140px)] overflow-auto transform transition-transform duration-200 ease-out translate-x-0"
+                className="absolute left-3 top-20 w-[86%] max-w-xs bg-white rounded-lg p-4 shadow-lg h-[calc(100vh-140px)] overflow-auto transform transition-transform duration-200 ease-out translate-x-0"
                 onKeyDown={(e) => {
                   if (e.key === "Escape") setMobileLeftOpen(false);
                 }}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-white font-semibold">Channels</h3>
+                  <h3 className="text-gray-900 font-semibold">Channels</h3>
                   <button
                     type="button"
                     onClick={() => setMobileLeftOpen(false)}
-                    className="text-black px-2"
+                    className="text-gray-700 px-2"
                   >
                     Close
                   </button>
@@ -441,12 +447,12 @@ export default function Home() {
                     {[1, 2, 3].map((i) => (
                       <div
                         key={i}
-                        className="animate-pulse bg-white/5 h-14 rounded"
+                        className="animate-pulse bg-gray-200 h-14 rounded"
                       />
                     ))}
                   </div>
                 ) : filteredChannels.length === 0 ? (
-                  <div className="text-white/80">No channels yet</div>
+                  <div className="text-gray-700">No channels yet</div>
                 ) : (
                   <ul className="space-y-3">
                     {filteredChannels.map((ch) => (
@@ -456,18 +462,18 @@ export default function Home() {
                           setSelectedChannel(ch);
                           setMobileLeftOpen(false);
                         }}
-                        className="p-3 rounded-lg cursor-pointer bg-white/10 hover:bg-white/20 text-white"
+                        className="p-3 rounded-lg cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-900"
                       >
                         <div className="flex justify-between items-center">
                           <div>
-                            <div className="text-white font-medium truncate">
+                            <div className="text-gray-900 font-medium truncate">
                               {ch.name}
                             </div>
-                            <div className="text-xs text-white/70 truncate">
+                            <div className="text-xs text-gray-600 truncate">
                               ID: {short(ch._id)}
                             </div>
                           </div>
-                          <div className="text-xs bg-white text-blue-700 px-2 py-0.5 rounded-full ml-3">
+                          <div className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full ml-3">
                             {Array.isArray(ch.members)
                               ? ch.members.length
                               : "—"}
@@ -478,13 +484,13 @@ export default function Home() {
                   </ul>
                 )}
 
-                <div className="mt-4 pt-3 border-t border-white/10">
+                <div className="mt-4 pt-3 border-t border-gray-300">
                   <div className="flex gap-2">
                     <input
                       value={joinChannelInput}
                       onChange={(e) => setJoinChannelInput(e.target.value)}
                       placeholder="Channel name or ID"
-                      className="flex-1 p-2 border rounded bg-white/5 text-white placeholder-white/60"
+                      className="flex-1 p-2 border rounded bg-gray-100 text-gray-800 placeholder-gray-400"
                     />
                     <button
                       type="button"
@@ -497,7 +503,7 @@ export default function Home() {
                 </div>
 
                 {error && (
-                  <div className="mt-3 text-sm text-red-400">
+                  <div className="mt-3 text-sm text-red-600">
                     {error}
                   </div>
                 )}
