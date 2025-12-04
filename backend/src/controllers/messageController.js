@@ -1,14 +1,31 @@
 const Message = require('../models/Message');
+const Channel = require('../models/Channel');
 
 exports.getMessages = async (req, res) => {
   try {
     const { channelId } = req.params;
+    if (!channelId) {
+      return res.status(400).json({ error: 'channelId required' });
+    }
+
+    const userId = req.userId;
+
+    // ✅ only members can read messages
+    const channel = await Channel.findOne({
+      _id: channelId,
+      members: userId,
+    });
+
+    if (!channel) {
+      return res.status(403).json({ error: 'Join this channel to view messages' });
+    }
+
     const limit = Math.min(100, parseInt(req.query.limit || '30', 10));
     const before = req.query.before ? new Date(req.query.before) : new Date();
 
     const messages = await Message.find({
       channel: channelId,
-      createdAt: { $lt: before }
+      createdAt: { $lt: before },
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -30,14 +47,23 @@ exports.postMessage = async (req, res) => {
       return res.status(400).json({ error: 'channelId required' });
     }
 
+  
+    const channel = await Channel.findOne({
+      _id: channelId,
+      members: sender,
+    });
+
+    if (!channel) {
+      return res.status(403).json({ error: 'Join this channel to send messages' });
+    }
+
     const msg = await Message.create({
       channel: channelId,
       sender,
-      text: String(text || '')
+      text: String(text || ''),
     });
 
     const populated = await msg.populate('sender', 'username _id');
-
     res.status(201).json(populated);
   } catch (err) {
     console.error('postMessage error', err);

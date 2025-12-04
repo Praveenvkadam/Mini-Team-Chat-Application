@@ -41,6 +41,58 @@ exports.createChannel = async (req, res) => {
   }
 };
 
+exports.getChannel = async (req, res) => {
+  try {
+    const identifier = safeTrim(req.params.id);
+    const userId = req.userId;
+
+    if (!identifier) {
+      return res.status(400).json({ error: 'Channel id or name is required' });
+    }
+
+    let channel = null;
+
+    if (mongoose.isValidObjectId(identifier)) {
+      channel = await Channel.findById(identifier);
+    }
+
+    if (!channel) {
+      channel = await Channel.findOne({
+        name: { $regex: `^${identifier}$`, $options: 'i' },
+      });
+    }
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const members = (channel.members || []).map(String);
+    const invitedUsers = (channel.invitedUsers || []).map(String);
+
+    const isMember = members.includes(String(userId));
+    const isInvited = invitedUsers.includes(String(userId));
+    const isOwner = String(channel.createdBy) === String(userId);
+
+    const canJoin = !channel.isPrivate || isMember || isInvited || isOwner;
+
+    const populated = await Channel.findById(channel._id)
+      .populate('createdBy', 'username name email profileUrl')
+      .populate('members', 'username name email profileUrl isOnline lastSeen')
+      .lean();
+
+    return res.json({
+      ...populated,
+      isMember,
+      isInvited,
+      isOwner,
+      canJoin,
+    });
+  } catch (err) {
+    console.error('getChannel error', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+};
+
 exports.joinChannel = async (req, res) => {
   try {
     const identifier = safeTrim(req.params.id);
@@ -146,15 +198,24 @@ exports.getMyChannels = async (req, res) => {
 exports.getChannelMembers = async (req, res) => {
   try {
     const channelId = req.params.id;
+    const userId = req.userId;
+
     if (!mongoose.isValidObjectId(channelId)) {
       return res.status(400).json({ error: 'Invalid channel id' });
     }
 
     const channel = await Channel.findById(channelId)
-      .populate('members', 'username name email profileUrl isOnline lastSeen')
-      .lean();
+      .populate('members', 'username name email profileUrl isOnline lastSeen');
 
     if (!channel) return res.status(404).json({ error: 'Channel not found' });
+
+    const isMember = (channel.members || [])
+      .map((m) => m._id.toString())
+      .includes(String(userId));
+
+    if (channel.isPrivate && !isMember && String(channel.createdBy) !== String(userId)) {
+      return res.status(403).json({ error: 'Not allowed to view members of this channel' });
+    }
 
     return res.json({ members: channel.members || [] });
   } catch (err) {
