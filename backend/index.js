@@ -16,7 +16,6 @@ const MessageRouter = require("./src/routes/messageRouter");
 const app = express();
 const server = http.createServer(app);
 
-
 const uploadsDir = path.join(__dirname, "uploads", "profiles");
 fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -25,18 +24,28 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-
 const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
   .map((u) => u.trim())
   .filter(Boolean);
 
+console.log("CLIENT_URLS:", CLIENT_URLS);
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin) return callback(null, true); // allow server-to-server / tools
-    if (CLIENT_URLS.includes(origin)) return callback(null, true);
-    return callback(null, false);
+    if (!origin) return callback(null, true); // server-to-server, Postman, etc.
+
+    // Allow any localhost port during development
+    if (origin.startsWith("http://localhost:")) {
+      return callback(null, true);
+    }
+
+    if (CLIENT_URLS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("CORS blocked origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -44,7 +53,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
 
 app.use("/api/auth", AuthRouter);
 app.use("/api/channels", ChannelRouter);
@@ -82,7 +90,6 @@ io.use((socket, next) => {
 
 setupSocketHandlers(io);
 
-
 const PORT = process.env.PORT || 3002;
 
 connectDB()
@@ -97,8 +104,10 @@ connectDB()
     process.exit(1);
   });
 
+process.on("unhandledRejection", (reason) =>
+  console.error("Unhandled Rejection:", reason)
+);
 
-process.on("unhandledRejection", (reason) => console.error("Unhandled Rejection:", reason));
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
   process.exit(1);
