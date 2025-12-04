@@ -4,8 +4,8 @@ const User = require('../models/User');
 
 module.exports = function setupSocketHandlers(io) {
   const userSockets = new Map();
-  const lastMessageAt = new Map(); 
-  const MESSAGE_MIN_INTERVAL = 300; 
+  const lastMessageAt = new Map();
+  const MESSAGE_MIN_INTERVAL = 300;
 
   io.on('connection', (socket) => {
     const user = socket.user;
@@ -19,7 +19,7 @@ module.exports = function setupSocketHandlers(io) {
     userSockets.get(uid).add(socket.id);
 
     if (userSockets.get(uid).size === 1) {
-      User.findByIdAndUpdate(uid, { isOnline: true, lastSeen: new Date() }).exec().catch(()=>{});
+      User.findByIdAndUpdate(uid, { isOnline: true, lastSeen: new Date() }).exec().catch(() => {});
       io.emit('presence:update', { userId: uid, isOnline: true });
     }
 
@@ -77,7 +77,13 @@ module.exports = function setupSocketHandlers(io) {
 
     socket.on('typing', ({ channelId, isTyping = true } = {}) => {
       if (!channelId) return;
-      socket.to(`channel:${channelId}`).emit('typing', { userId: uid, isTyping });
+      const payload = {
+        userId: uid,
+        username: user.username,
+        channelId,
+        isTyping: Boolean(isTyping)
+      };
+      socket.to(`channel:${channelId}`).emit('typing', payload);
     });
 
     socket.on('message:update', async ({ messageId, text } = {}) => {
@@ -115,8 +121,9 @@ module.exports = function setupSocketHandlers(io) {
         set.delete(socket.id);
         if (set.size === 0) {
           userSockets.delete(uid);
-          User.findByIdAndUpdate(uid, { isOnline: false, lastSeen: new Date() }).exec().catch(()=>{});
-          io.emit('presence:update', { userId: uid, isOnline: false, lastSeen: new Date() });
+          const now = new Date();
+          User.findByIdAndUpdate(uid, { isOnline: false, lastSeen: now }).exec().catch(() => {});
+          io.emit('presence:update', { userId: uid, isOnline: false, lastSeen: now });
         }
       }
       console.log('Socket disconnected', uid, socket.id);

@@ -5,5 +5,7 @@ const msgCtrl = require('../controllers/messageController');
 
 router.get('/:channelId', auth, msgCtrl.getMessages);
 router.post('/', auth, msgCtrl.postMessage);
+router.delete('/:messageId', auth, msgCtrl.deleteMessage);
+router.put('/:messageId', auth, msgCtrl.editMessage);
 
 module.exports = router;
