@@ -24,7 +24,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http://localhost:5173")
+const CLIENT_URLS = (
+  process.env.CLIENT_URLS ||
+  process.env.CLIENT_URL ||
+  "http://localhost:5173"
+)
   .split(",")
   .map((u) => u.trim())
   .filter(Boolean);
@@ -32,10 +36,11 @@ const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http:
 console.log("CLIENT_URLS:", CLIENT_URLS);
 
 const isAllowedOrigin = (origin) => {
-  if (!origin) return true;                              
+  if (!origin) return true;                                
   if (origin.startsWith("http://localhost:")) return true; 
-  if (origin.endsWith(".vercel.app")) return true;        
+  if (origin.endsWith(".vercel.app")) return true;         
   if (CLIENT_URLS.includes(origin)) return true;          
+  return false;
 };
 
 const corsOptions = {
@@ -74,6 +79,7 @@ const io = new Server(server, {
   pingTimeout: 30000,
 });
 
+
 io.use((socket, next) => {
   try {
     const token =
@@ -83,15 +89,25 @@ io.use((socket, next) => {
     if (!token) return next(new Error("Missing token"));
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = payload.id || payload.userId || payload._id;
 
-    if (!socket.userId) return next(new Error("Invalid token payload"));
+    const userId = payload.id || payload.userId || payload._id;
+    if (!userId) return next(new Error("Invalid token payload"));
+
+    // normalize and attach
+    socket.userId = String(userId);
+    socket.user = {
+      id: socket.userId,                                 
+      username: payload.username || payload.name || payload.email || "",
+      email: payload.email,
+    };
 
     next();
   } catch (err) {
+    console.error("Socket auth failed:", err.message);
     next(new Error("Socket auth failed"));
   }
 });
+
 
 setupSocketHandlers(io);
 
