@@ -18,9 +18,14 @@ module.exports = function setupSocketHandlers(io) {
     if (!userSockets.has(uid)) userSockets.set(uid, new Set());
     userSockets.get(uid).add(socket.id);
 
+    socket.emit('presence:snapshot', {
+      onlineUserIds: Array.from(userSockets.keys()),
+    });
+
     if (userSockets.get(uid).size === 1) {
-      User.findByIdAndUpdate(uid, { isOnline: true, lastSeen: new Date() }).exec().catch(() => {});
-      io.emit('presence:update', { userId: uid, isOnline: true });
+      const now = new Date();
+      User.findByIdAndUpdate(uid, { isOnline: true, lastSeen: now }).exec().catch(() => {});
+      io.emit('presence:update', { userId: uid, isOnline: true, lastSeen: now });
     }
 
     console.log('Socket connected', uid, socket.id);
@@ -63,7 +68,7 @@ module.exports = function setupSocketHandlers(io) {
           channel: channelId,
           sender: uid,
           text: String(text || ''),
-          attachments: attachments || []
+          attachments: attachments || [],
         });
 
         const populated = await msg.populate('sender', 'username _id');
@@ -81,7 +86,7 @@ module.exports = function setupSocketHandlers(io) {
         userId: uid,
         username: user.username,
         channelId,
-        isTyping: Boolean(isTyping)
+        isTyping: Boolean(isTyping),
       };
       socket.to(`channel:${channelId}`).emit('typing', payload);
     });
