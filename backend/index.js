@@ -32,11 +32,10 @@ const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http:
 console.log("CLIENT_URLS:", CLIENT_URLS);
 
 const isAllowedOrigin = (origin) => {
-  if (!origin) return true;                               // Postman / server-to-server
-  if (origin.startsWith("http://localhost:")) return true; // any localhost port in dev
-  if (origin.endsWith(".vercel.app")) return true;         // any Vercel deployment
-  if (CLIENT_URLS.includes(origin)) return true;           // explicit allow-list
-  return false;
+  if (!origin) return true;                              
+  if (origin.startsWith("http://localhost:")) return true; 
+  if (origin.endsWith(".vercel.app")) return true;        
+  if (CLIENT_URLS.includes(origin)) return true;          
 };
 
 const corsOptions = {
