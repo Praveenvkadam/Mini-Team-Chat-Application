@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import EmojiPicker from "emoji-picker-react";
+import { socket } from "../socket";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
 
@@ -30,22 +31,17 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     if (!channelId) return;
     setLoadingChannel(true);
     setError("");
-
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, { headers });
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (!res.ok) {
         setChannelData(null);
         setError(data.error || data.message || `Failed to load channel (${res.status})`);
         setLoadingChannel(false);
         return;
       }
-
       setChannelData(data);
-
       if (!data.isMember) {
         setShowJoinPopup(true);
         setMessages([]);
@@ -64,26 +60,21 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     if (!channelData?.isMember) return;
     setLoadingMessages(true);
     setError("");
-
     try {
       const res = await fetch(`${API_URL}/api/messages/${channelId}`, { headers });
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (res.status === 403) {
         setShowJoinPopup(true);
         setMessages([]);
         setLoadingMessages(false);
         return;
       }
-
       if (!res.ok) {
         setError(data.error || data.message || `Failed to load messages (${res.status})`);
         setLoadingMessages(false);
         return;
       }
-
       setMessages(Array.isArray(data) ? [...data].reverse() : []);
     } catch {
       setError("Network error loading messages");
@@ -105,32 +96,38 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     if (channelData?.isMember) fetchMessages();
   }, [channelData?.isMember, fetchMessages]);
 
+  useEffect(() => {
+    if (!channelId) return;
+    if (channelData?.isMember) {
+      socket.emit("join:channel", { channelId });
+    } else {
+      socket.emit("leave:channel", { channelId });
+    }
+    return () => {
+      socket.emit("leave:channel", { channelId });
+    };
+  }, [channelId, channelData?.isMember]);
+
   const handleJoin = async () => {
     if (!channelId) return;
     setJoinLoading(true);
     setError("");
-
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/join`, {
         method: "POST",
         headers,
       });
-
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (!res.ok) {
         setError(data.error || data.message || "Failed to join channel");
         setJoinLoading(false);
         return;
       }
-
       setJoinLoading(false);
       setShowJoinPopup(false);
       await fetchChannel();
       await fetchMessages();
-
       onMembershipChange?.(channelId);
     } catch {
       setError("Network error joining channel");
@@ -141,29 +138,23 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
   const handleLeaveChannel = async () => {
     if (!channelId) return;
     if (!window.confirm(`Leave channel "${channelData?.name}"?`)) return;
-
     setError("");
-
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/leave`, {
         method: "POST",
         headers,
       });
-
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (!res.ok) {
         setError(data.error || data.message || "Failed to leave channel");
         return;
       }
-
       setChannelData({ ...data, isMember: false });
       setMessages([]);
       setShowJoinPopup(true);
       setShowEmojiPicker(false);
-
+      socket.emit("leave:channel", { channelId });
       const leftUser = { _id: userId, name: username || "You", email: email || undefined };
       onMembershipChange?.(channelId, { left: true, user: leftUser });
     } catch {
@@ -173,24 +164,19 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
 
   const handleDeleteChannel = async () => {
     if (!channelId) return;
-    if (!window.confirm(`Delete channel "${channelData?.name || channel?.name}" permanently?`))
-      return;
-
+    if (!window.confirm(`Delete channel "${channelData?.name || channel?.name}" permanently?`)) return;
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
         method: "DELETE",
         headers,
       });
-
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (!res.ok) {
         alert(data.error || data.message || "Failed to delete channel");
         return;
       }
-
+      socket.emit("leave:channel", { channelId });
       onRemoved?.(channelId);
     } catch {
       alert("Network error deleting channel");
@@ -204,33 +190,26 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
       setShowJoinPopup(true);
       return;
     }
-
     setSending(true);
     setError("");
-
     try {
       const res = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
         headers,
         body: JSON.stringify({ channelId, text }),
       });
-
       let data;
-      try { data = await res.json(); }
-      catch { data = { message: await res.text() }; }
-
+      try { data = await res.json(); } catch { data = { message: await res.text() }; }
       if (res.status === 403) {
         setShowJoinPopup(true);
         setSending(false);
         return;
       }
-
       if (!res.ok) {
         setError(data.error || data.message || "Failed to send message");
         setSending(false);
         return;
       }
-
       setMessages((prev) => [...prev, data]);
       setText("");
     } catch {
@@ -267,8 +246,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     );
 
   const isMember = !!channelData.isMember;
-  const isOwner =
-    channelData.createdBy && String(channelData.createdBy._id) === String(userId);
+  const isOwner = channelData.isOwner === true;
 
   return (
     <div className="relative flex-1 flex flex-col">
@@ -299,19 +277,15 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={isOwner ? handleDeleteChannel : undefined}
-            disabled={!isOwner}
-            title={isOwner ? "Delete this channel" : "Only channel creator can delete"}
-            className={`px-3 py-1 text-sm rounded border ${
-              isOwner
-                ? "bg-red-50 text-red-600 border-red-200"
-                : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-            }`}
-          >
-            Delete Channel
-          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={handleDeleteChannel}
+              className="px-3 py-1 text-sm rounded border bg-red-50 text-red-600 border-red-200"
+            >
+              Delete Channel
+            </button>
+          )}
         </div>
       </div>
 

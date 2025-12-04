@@ -1,9 +1,11 @@
+// src/controllers/channelController.js
 const Channel = require('../models/Channel');
 const User = require('../models/User');
 const mongoose = require('mongoose');
 
 const safeTrim = (v) => (typeof v === 'string' ? v.trim() : v);
 
+// CREATE CHANNEL
 exports.createChannel = async (req, res) => {
   try {
     const creatorId = req.userId;
@@ -47,6 +49,7 @@ exports.createChannel = async (req, res) => {
   }
 };
 
+// GET SINGLE CHANNEL (fixed: includes createdById and isOwner)
 exports.getChannel = async (req, res) => {
   try {
     const identifier = safeTrim(req.params.id);
@@ -72,7 +75,6 @@ exports.getChannel = async (req, res) => {
     const isMember = members.includes(String(userId));
     const isOwner = String(channel.createdBy) === String(userId);
     const isInvited = invited.includes(String(userId));
-
     const canJoin = !channel.isPrivate || isOwner || isMember || isInvited;
 
     const populated = await Channel.findById(channel._id)
@@ -85,8 +87,13 @@ exports.getChannel = async (req, res) => {
     const leftMembers = (populated.leftMembers || []).map(m => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
+    const createdById = populated.createdBy
+      ? (String(populated.createdBy._id || populated.createdBy))
+      : String(channel.createdBy);
+
     return res.json({
       ...populated,
+      createdById,
       members: combined,
       isMember,
       isOwner,
@@ -99,6 +106,7 @@ exports.getChannel = async (req, res) => {
   }
 };
 
+// JOIN CHANNEL
 exports.joinChannel = async (req, res) => {
   try {
     const identifier = safeTrim(req.params.id);
@@ -159,6 +167,7 @@ exports.joinChannel = async (req, res) => {
   }
 };
 
+// LEAVE CHANNEL
 exports.leaveChannel = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -201,6 +210,7 @@ exports.leaveChannel = async (req, res) => {
   }
 };
 
+// GET ALL CHANNELS USER CAN SEE
 exports.getChannels = async (req, res) => {
   try {
     const userId = req.userId;
@@ -220,6 +230,7 @@ exports.getChannels = async (req, res) => {
   }
 };
 
+// GET MY CHANNELS
 exports.getMyChannels = async (req, res) => {
   try {
     const userId = req.userId;
@@ -237,6 +248,7 @@ exports.getMyChannels = async (req, res) => {
   }
 };
 
+// GET CHANNEL MEMBERS
 exports.getChannelMembers = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -259,6 +271,7 @@ exports.getChannelMembers = async (req, res) => {
   }
 };
 
+// INVITE
 exports.inviteUser = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -284,6 +297,7 @@ exports.inviteUser = async (req, res) => {
   }
 };
 
+// DELETE
 exports.deleteChannel = async (req, res) => {
   try {
     const channelId = req.params.id;
