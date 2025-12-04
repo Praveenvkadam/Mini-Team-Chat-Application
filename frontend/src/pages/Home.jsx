@@ -8,6 +8,7 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import ChannelView from "../components/ChannelView";
+import { socket } from "../socket";
 
 const MenuIcon = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -94,6 +95,7 @@ export default function Home() {
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
+  const [members, setMembers] = useState([]);
   const [joinChannelInput, setJoinChannelInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -152,6 +154,7 @@ export default function Home() {
         }
         setChannels([]);
         setSelectedChannel(null);
+        setMembers([]);
         setError(body.error || body.message || "Failed to load channels");
         return;
       }
@@ -172,6 +175,66 @@ export default function Home() {
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  const fetchMembers = useCallback(
+    async (channelId) => {
+      if (!channelId) {
+        setMembers([]);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_URL}/api/channels/${channelId}/members`, {
+          headers: buildHeaders(),
+        });
+
+        if (await handleAuthError(res)) return;
+
+        if (!res.ok) {
+          let body;
+          try {
+            body = await res.json();
+          } catch (e) {
+            body = { message: await res.text() };
+          }
+          setMembers([]);
+          setError(body.error || body.message || "Failed to load members");
+          return;
+        }
+
+        const data = await res.json();
+        setMembers(data.members || []);
+      } catch (err) {
+        console.error("fetchMembers err:", err);
+        setError("Network error while fetching members");
+      }
+    },
+    [API_URL, buildHeaders, handleAuthError]
+  );
+
+  useEffect(() => {
+    if (selectedChannel && selectedChannel._id) {
+      fetchMembers(selectedChannel._id);
+    } else {
+      setMembers([]);
+    }
+  }, [selectedChannel, fetchMembers]);
+
+  useEffect(() => {
+    function handlePresenceUpdate({ userId, isOnline, lastSeen }) {
+      setMembers((prev) =>
+        prev.map((m) =>
+          String(m._id) === String(userId)
+            ? { ...m, isOnline, lastSeen: lastSeen || m.lastSeen }
+            : m
+        )
+      );
+    }
+
+    socket.on("presence:update", handlePresenceUpdate);
+    return () => {
+      socket.off("presence:update", handlePresenceUpdate);
+    };
+  }, []);
 
   const filteredChannels = useMemo(() => {
     const q = (query || "").trim().toLowerCase();
@@ -228,6 +291,7 @@ export default function Home() {
     setSelectedChannel((prev) =>
       prev && prev._id === id ? null : prev
     );
+    setMembers((prev) => prev.filter((m) => m.channelId !== id));
   }, []);
 
   useEffect(() => {
@@ -256,6 +320,7 @@ export default function Home() {
   const renderMemberCard = (m) => {
     const name = m.name || m.username || m.email || "User";
     const initial = name[0]?.toUpperCase() || "U";
+    const online = Boolean(m.isOnline);
 
     return (
       <div
@@ -274,7 +339,7 @@ export default function Home() {
           </div>
         )}
 
-        <div>
+        <div className="flex-1">
           <div className="text-sm font-medium text-gray-700">
             {name}
           </div>
@@ -283,6 +348,14 @@ export default function Home() {
               {m.email}
             </div>
           )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${
+              online ? "bg-emerald-500" : "bg-gray-400"
+            }`}
+          />
         </div>
       </div>
     );
@@ -312,7 +385,6 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-start gap-6">
-          {/* LEFT SIDEBAR - desktop */}
           <aside className="hidden md:block md:w-72 lg:w-80">
             <div className="bg-white rounded-lg p-4 h-[calc(100vh-96px)] overflow-auto">
               <div className="flex items-center justify-between mb-3">
@@ -558,16 +630,12 @@ export default function Home() {
                     {selectedChannel.name}
                   </h4>
                   <p className="text-sm text-gray-600">
-                    {Array.isArray(selectedChannel.members)
-                      ? selectedChannel.members.length
-                      : 0}{" "}
-                    members
+                    {members.length} members
                   </p>
 
                   <div className="mt-4 space-y-3">
-                    {selectedChannel.members &&
-                    selectedChannel.members.length ? (
-                      selectedChannel.members.map(renderMemberCard)
+                    {members && members.length ? (
+                      members.map(renderMemberCard)
                     ) : (
                       <div className="text-sm text-gray-600">
                         No members to show
@@ -608,10 +676,7 @@ export default function Home() {
                           {selectedChannel.name}
                         </h4>
                         <p className="text-sm text-gray-600">
-                          {Array.isArray(selectedChannel.members)
-                            ? selectedChannel.members.length
-                            : 0}{" "}
-                          members
+                          {members.length} members
                         </p>
                       </div>
                       <button
@@ -624,9 +689,8 @@ export default function Home() {
                     </div>
 
                     <div className="mt-4 space-y-3">
-                      {selectedChannel.members &&
-                      selectedChannel.members.length ? (
-                        selectedChannel.members.map(renderMemberCard)
+                      {members && members.length ? (
+                        members.map(renderMemberCard)
                       ) : (
                         <div className="text-sm text-gray-600">
                           No members to show
