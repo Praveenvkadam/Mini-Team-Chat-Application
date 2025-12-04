@@ -16,6 +16,7 @@ const MessageRouter = require("./src/routes/messageRouter");
 const app = express();
 const server = http.createServer(app);
 
+
 const uploadsDir = path.join(__dirname, "uploads", "profiles");
 fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -24,22 +25,26 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+
 const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
   .map((u) => u.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (CLIENT_URLS.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS-blocked " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true); // allow server-to-server / tools
+    if (CLIENT_URLS.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+
 
 app.use("/api/auth", AuthRouter);
 app.use("/api/channels", ChannelRouter);
@@ -77,13 +82,14 @@ io.use((socket, next) => {
 
 setupSocketHandlers(io);
 
+
 const PORT = process.env.PORT || 3002;
 
 connectDB()
   .then(() => {
     server.listen(PORT, () => {
-      console.log("Server running:", PORT);
-      console.log("Origins:", CLIENT_URLS);
+      console.log("Server running on port:", PORT);
+      console.log("Allowed origins:", CLIENT_URLS);
     });
   })
   .catch((err) => {
@@ -91,5 +97,9 @@ connectDB()
     process.exit(1);
   });
 
-process.on("unhandledRejection", (reason) => console.error("Unhandled:", reason));
-process.on("uncaughtException", (err) => console.error("Uncaught:", err));
+
+process.on("unhandledRejection", (reason) => console.error("Unhandled Rejection:", reason));
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  process.exit(1);
+});
