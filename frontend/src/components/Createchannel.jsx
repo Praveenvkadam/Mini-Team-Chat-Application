@@ -1,36 +1,22 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-/**
- * CreateChannel.jsx
- *
- * - Form: channel name, capacity, public/private
- * - POST /api/channels -> { name, isPrivate, capacity }
- * - On success shows simple channel view
- * - Delete: DELETE /api/channels/:id
- *
- * Works both as:
- * - standalone page
- * - modal (via onClose prop)
- */
 
 export default function CreateChannel({ onClose }) {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
 
-  // Form state
+  
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(50);
   const [isPrivate, setIsPrivate] = useState(false);
 
-  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [channel, setChannel] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Create channel
   const handleCreate = async (e) => {
     e?.preventDefault();
     setError(null);
@@ -62,7 +48,7 @@ export default function CreateChannel({ onClose }) {
         return;
       }
 
-      setChannel(data); // backend should return channel
+      setChannel(data); 
       setLoading(false);
     } catch (err) {
       console.error("Create channel error:", err);
@@ -71,7 +57,6 @@ export default function CreateChannel({ onClose }) {
     }
   };
 
-  // Delete channel
   const handleDelete = async () => {
     if (!channel) return;
 
@@ -106,7 +91,6 @@ export default function CreateChannel({ onClose }) {
     }
   };
 
-  // After create: simple channel view
   if (channel) {
     const membersCount = Array.isArray(channel.members)
       ? channel.members.length
@@ -164,7 +148,6 @@ export default function CreateChannel({ onClose }) {
             </div>
           </div>
 
-          {/* Extra close for modal usage */}
           <div className="mt-6 flex justify-end">
             <button
               type="button"

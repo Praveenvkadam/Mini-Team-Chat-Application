@@ -145,7 +145,6 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* Desktop actions */}
           <div className="hidden md:flex items-center gap-4">
             <button
               onClick={() => {
