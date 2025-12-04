@@ -33,22 +33,17 @@ const CLIENT_URLS = (
   .map((u) => u.trim())
   .filter(Boolean);
 
-console.log("CLIENT_URLS:", CLIENT_URLS);
-
 const isAllowedOrigin = (origin) => {
-  if (!origin) return true;                                
-  if (origin.startsWith("http://localhost:")) return true; 
-  if (origin.endsWith(".vercel.app")) return true;         
-  if (CLIENT_URLS.includes(origin)) return true;          
+  if (!origin) return true;
+  if (origin.startsWith("http://localhost:")) return true;
+  if (origin.endsWith(".vercel.app")) return true;
+  if (CLIENT_URLS.includes(origin)) return true;
   return false;
 };
 
 const corsOptions = {
   origin(origin, callback) {
-    if (isAllowedOrigin(origin)) {
-      return callback(null, true);
-    }
-    console.log("CORS blocked origin:", origin);
+    if (isAllowedOrigin(origin)) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -67,10 +62,7 @@ app.get("/", (req, res) => res.json({ message: "API running" }));
 const io = new Server(server, {
   cors: {
     origin(origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        return callback(null, true);
-      }
-      console.log("Socket.io CORS blocked origin:", origin);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       return callback(new Error("Not allowed by CORS"));
     },
     methods: ["GET", "POST"],
@@ -79,6 +71,7 @@ const io = new Server(server, {
   pingTimeout: 30000,
 });
 
+app.set('io', io);
 
 io.use((socket, next) => {
   try {
@@ -93,10 +86,9 @@ io.use((socket, next) => {
     const userId = payload.id || payload.userId || payload._id;
     if (!userId) return next(new Error("Invalid token payload"));
 
-    // normalize and attach
     socket.userId = String(userId);
     socket.user = {
-      id: socket.userId,                                 
+      id: socket.userId,
       username: payload.username || payload.name || payload.email || "",
       email: payload.email,
     };
@@ -107,7 +99,6 @@ io.use((socket, next) => {
     next(new Error("Socket auth failed"));
   }
 });
-
 
 setupSocketHandlers(io);
 

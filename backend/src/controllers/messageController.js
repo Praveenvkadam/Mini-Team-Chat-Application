@@ -4,20 +4,16 @@ const Channel = require('../models/Channel');
 exports.getMessages = async (req, res) => {
   try {
     const { channelId } = req.params;
-    if (!channelId) {
-      return res.status(400).json({ error: 'channelId required' });
-    }
-
     const userId = req.userId;
 
-    // ✅ only members can read messages
-    const channel = await Channel.findOne({
-      _id: channelId,
-      members: userId,
-    });
-
+    const channel = await Channel.findById(channelId).select('members');
     if (!channel) {
-      return res.status(403).json({ error: 'Join this channel to view messages' });
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const isMember = channel.members.map(String).includes(String(userId));
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this channel' });
     }
 
     const limit = Math.min(100, parseInt(req.query.limit || '30', 10));
@@ -31,10 +27,10 @@ exports.getMessages = async (req, res) => {
       .limit(limit)
       .populate('sender', 'username _id');
 
-    res.json(messages);
+    return res.json(messages);
   } catch (err) {
     console.error('getMessages error', err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -47,14 +43,14 @@ exports.postMessage = async (req, res) => {
       return res.status(400).json({ error: 'channelId required' });
     }
 
-  
-    const channel = await Channel.findOne({
-      _id: channelId,
-      members: sender,
-    });
-
+    const channel = await Channel.findById(channelId).select('members');
     if (!channel) {
-      return res.status(403).json({ error: 'Join this channel to send messages' });
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const isMember = channel.members.map(String).includes(String(sender));
+    if (!isMember) {
+      return res.status(403).json({ error: 'You are not a member of this channel' });
     }
 
     const msg = await Message.create({
@@ -64,10 +60,11 @@ exports.postMessage = async (req, res) => {
     });
 
     const populated = await msg.populate('sender', 'username _id');
-    res.status(201).json(populated);
+
+    return res.status(201).json(populated);
   } catch (err) {
     console.error('postMessage error', err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -91,10 +88,10 @@ exports.deleteMessage = async (req, res) => {
 
     await Message.deleteOne({ _id: messageId });
 
-    res.json({ success: true, messageId });
+    return res.json({ success: true, messageId });
   } catch (err) {
     console.error('deleteMessage error', err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 };
 
@@ -121,9 +118,9 @@ exports.editMessage = async (req, res) => {
     await msg.save();
     const populated = await msg.populate('sender', 'username _id');
 
-    res.json(populated);
+    return res.json(populated);
   } catch (err) {
     console.error('editMessage error', err);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 };

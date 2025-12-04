@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import EmojiPicker from "emoji-picker-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
 
-export default function ChannelView({ channel, onRemoved }) {
+export default function ChannelView({ channel, onRemoved, onMembershipChange }) {
   const token = localStorage.getItem("token");
   const userId = localStorage.getItem("userId");
+  const username = localStorage.getItem("username") || localStorage.getItem("name");
+  const email = localStorage.getItem("email");
   const channelId = channel?._id;
 
   const [channelData, setChannelData] = useState(null);
@@ -16,6 +19,7 @@ export default function ChannelView({ channel, onRemoved }) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [showJoinPopup, setShowJoinPopup] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const headers = {
     "Content-Type": "application/json",
@@ -28,23 +32,14 @@ export default function ChannelView({ channel, onRemoved }) {
     setError("");
 
     try {
-      const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
-        headers,
-      });
-
+      const res = await fetch(`${API_URL}/api/channels/${channelId}`, { headers });
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text();
-        data = { message: text };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (!res.ok) {
         setChannelData(null);
-        setError(
-          data.error || data.message || `Failed to load channel (${res.status})`
-        );
+        setError(data.error || data.message || `Failed to load channel (${res.status})`);
         setLoadingChannel(false);
         return;
       }
@@ -57,8 +52,7 @@ export default function ChannelView({ channel, onRemoved }) {
       } else {
         setShowJoinPopup(false);
       }
-    } catch (err) {
-      console.error("fetchChannel error", err);
+    } catch {
       setError("Network error loading channel");
     } finally {
       setLoadingChannel(false);
@@ -72,17 +66,10 @@ export default function ChannelView({ channel, onRemoved }) {
     setError("");
 
     try {
-      const res = await fetch(`${API_URL}/api/messages/${channelId}`, {
-        headers,
-      });
-
+      const res = await fetch(`${API_URL}/api/messages/${channelId}`, { headers });
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text();
-        data = { message: text };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (res.status === 403) {
         setShowJoinPopup(true);
@@ -92,19 +79,13 @@ export default function ChannelView({ channel, onRemoved }) {
       }
 
       if (!res.ok) {
-        setError(
-          data.error ||
-            data.message ||
-            `Failed to load messages (${res.status})`
-        );
+        setError(data.error || data.message || `Failed to load messages (${res.status})`);
         setLoadingMessages(false);
         return;
       }
 
-      const msgs = Array.isArray(data) ? [...data].reverse() : [];
-      setMessages(msgs);
-    } catch (err) {
-      console.error("fetchMessages error", err);
+      setMessages(Array.isArray(data) ? [...data].reverse() : []);
+    } catch {
       setError("Network error loading messages");
     } finally {
       setLoadingMessages(false);
@@ -116,6 +97,7 @@ export default function ChannelView({ channel, onRemoved }) {
     setMessages([]);
     setText("");
     setShowJoinPopup(false);
+    setShowEmojiPicker(false);
     if (channelId) fetchChannel();
   }, [channelId, fetchChannel]);
 
@@ -135,12 +117,8 @@ export default function ChannelView({ channel, onRemoved }) {
       });
 
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text();
-        data = { message: text };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (!res.ok) {
         setError(data.error || data.message || "Failed to join channel");
@@ -148,13 +126,13 @@ export default function ChannelView({ channel, onRemoved }) {
         return;
       }
 
-      // reload channel so isMember/isOwner flags are correct
       setJoinLoading(false);
       setShowJoinPopup(false);
       await fetchChannel();
       await fetchMessages();
-    } catch (err) {
-      console.error("joinChannel error", err);
+
+      onMembershipChange?.(channelId);
+    } catch {
       setError("Network error joining channel");
       setJoinLoading(false);
     }
@@ -162,10 +140,10 @@ export default function ChannelView({ channel, onRemoved }) {
 
   const handleLeaveChannel = async () => {
     if (!channelId) return;
-    const ok = window.confirm(`Leave channel "${channelData?.name}"?`);
-    if (!ok) return;
+    if (!window.confirm(`Leave channel "${channelData?.name}"?`)) return;
 
     setError("");
+
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/leave`, {
         method: "POST",
@@ -173,34 +151,30 @@ export default function ChannelView({ channel, onRemoved }) {
       });
 
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text();
-        data = { message: text };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (!res.ok) {
         setError(data.error || data.message || "Failed to leave channel");
         return;
       }
 
-      // user no longer member – clear messages and show join popup
       setChannelData({ ...data, isMember: false });
       setMessages([]);
       setShowJoinPopup(true);
-    } catch (err) {
-      console.error("leaveChannel error", err);
+      setShowEmojiPicker(false);
+
+      const leftUser = { _id: userId, name: username || "You", email: email || undefined };
+      onMembershipChange?.(channelId, { left: true, user: leftUser });
+    } catch {
       setError("Network error leaving channel");
     }
   };
 
   const handleDeleteChannel = async () => {
     if (!channelId) return;
-    const ok = window.confirm(
-      `Delete channel "${channelData?.name || channel?.name}" permanently?`
-    );
-    if (!ok) return;
+    if (!window.confirm(`Delete channel "${channelData?.name || channel?.name}" permanently?`))
+      return;
 
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
@@ -209,21 +183,16 @@ export default function ChannelView({ channel, onRemoved }) {
       });
 
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const text = await res.text();
-        data = { message: text };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (!res.ok) {
         alert(data.error || data.message || "Failed to delete channel");
         return;
       }
 
-      if (onRemoved) onRemoved(channelId);
-    } catch (err) {
-      console.error("deleteChannel error", err);
+      onRemoved?.(channelId);
+    } catch {
       alert("Network error deleting channel");
     }
   };
@@ -247,12 +216,8 @@ export default function ChannelView({ channel, onRemoved }) {
       });
 
       let data;
-      try {
-        data = await res.json();
-      } catch {
-        const textBody = await res.text();
-        data = { message: textBody };
-      }
+      try { data = await res.json(); }
+      catch { data = { message: await res.text() }; }
 
       if (res.status === 403) {
         setShowJoinPopup(true);
@@ -268,58 +233,53 @@ export default function ChannelView({ channel, onRemoved }) {
 
       setMessages((prev) => [...prev, data]);
       setText("");
-    } catch (err) {
-      console.error("sendMessage error", err);
+    } catch {
       setError("Network error sending message");
     } finally {
       setSending(false);
     }
   };
 
-  if (!channelId) {
+  const handleEmojiClick = (emojiData) => {
+    setText((prev) => prev + (emojiData.emoji || ""));
+  };
+
+  if (!channelId)
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center">
         <h2 className="text-2xl font-bold text-gray-800">Select a channel</h2>
         <p className="text-gray-600">Or join one by name or ID</p>
       </div>
     );
-  }
 
-  if (loadingChannel) {
+  if (loadingChannel)
     return (
       <div className="flex-1 flex items-center justify-center text-gray-600">
         Loading channel...
       </div>
     );
-  }
 
-  if (!channelData) {
+  if (!channelData)
     return (
       <div className="flex-1 flex items-center justify-center text-red-600">
         {error || "Failed to load channel"}
       </div>
     );
-  }
 
   const isMember = !!channelData.isMember;
   const isOwner =
-    channelData.createdBy &&
-    String(channelData.createdBy._id) === String(userId);
+    channelData.createdBy && String(channelData.createdBy._id) === String(userId);
 
   return (
-    <div className="flex-1 flex flex-col">
+    <div className="relative flex-1 flex flex-col">
       <div className="flex items-center justify-between pb-3 border-b">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800">
-            {channelData.name}
-          </h2>
+          <h2 className="text-xl font-semibold text-gray-800">{channelData.name}</h2>
           <p className="text-xs text-gray-500">
-            {Array.isArray(channelData.members)
-              ? channelData.members.length
-              : 0}{" "}
-            members
+            {Array.isArray(channelData.members) ? channelData.members.length : 0} members
           </p>
         </div>
+
         <div className="flex gap-2">
           <button
             type="button"
@@ -329,15 +289,7 @@ export default function ChannelView({ channel, onRemoved }) {
             Refresh
           </button>
 
-          {isOwner ? (
-            <button
-              type="button"
-              onClick={handleDeleteChannel}
-              className="px-3 py-1 text-sm rounded bg-red-50 text-red-600 border border-red-200"
-            >
-              Delete Channel
-            </button>
-          ) : isMember ? (
+          {isMember && !isOwner && (
             <button
               type="button"
               onClick={handleLeaveChannel}
@@ -345,7 +297,21 @@ export default function ChannelView({ channel, onRemoved }) {
             >
               Leave Channel
             </button>
-          ) : null}
+          )}
+
+          <button
+            type="button"
+            onClick={isOwner ? handleDeleteChannel : undefined}
+            disabled={!isOwner}
+            title={isOwner ? "Delete this channel" : "Only channel creator can delete"}
+            className={`px-3 py-1 text-sm rounded border ${
+              isOwner
+                ? "bg-red-50 text-red-600 border-red-200"
+                : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+            }`}
+          >
+            Delete Channel
+          </button>
         </div>
       </div>
 
@@ -353,15 +319,12 @@ export default function ChannelView({ channel, onRemoved }) {
         {loadingMessages ? (
           <div className="text-gray-500 text-sm">Loading messages...</div>
         ) : !isMember ? (
-          <div className="text-gray-500 text-sm">
-            Join this channel to see messages.
-          </div>
+          <div className="text-gray-500 text-sm">Join this channel to see messages.</div>
         ) : messages.length === 0 ? (
           <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
           messages.map((m) => {
-            const mine =
-              m.sender && String(m.sender._id) === String(userId);
+            const mine = m.sender && String(m.sender._id) === String(userId);
             return (
               <div
                 key={m._id}
@@ -372,29 +335,31 @@ export default function ChannelView({ channel, onRemoved }) {
                 <div className="text-xs font-semibold text-gray-600 mb-0.5">
                   {mine ? "You" : m.sender?.username || "User"}
                 </div>
-                <div className="text-sm text-gray-900 whitespace-pre-wrap">
-                  {m.text}
-                </div>
+                <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>
               </div>
             );
           })
         )}
       </div>
 
-      <form
-        onSubmit={handleSend}
-        className="pt-3 border-t flex items-center gap-2"
-      >
+      <form onSubmit={handleSend} className="pt-3 border-t flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowEmojiPicker((v) => !v)}
+          className="px-2 text-2xl"
+        >
+          😊
+        </button>
+
         <input
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={!isMember}
-          placeholder={
-            isMember ? "Type a message..." : "Join this channel to send messages"
-          }
+          placeholder={isMember ? "Type a message..." : "Join this channel to send messages"}
           className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
         />
+
         <button
           type="submit"
           disabled={!isMember || sending}
@@ -404,19 +369,21 @@ export default function ChannelView({ channel, onRemoved }) {
         </button>
       </form>
 
+      {showEmojiPicker && (
+        <div className="absolute bottom-16 left-2 z-30">
+          <EmojiPicker onEmojiClick={handleEmojiClick} theme="light" height={350} width={280} />
+        </div>
+      )}
+
       {showJoinPopup && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-lg">
-            <h3 className="text-lg font-semibold mb-2">
-              Join “{channelData.name}”
-            </h3>
+            <h3 className="text-lg font-semibold mb-2">Join “{channelData.name}”</h3>
             <p className="text-sm text-gray-600 mb-4">
-              You are not a member of this channel. Join to see messages and
-              start chatting.
+              You are not a member of this channel. Join to see messages and start chatting.
             </p>
-            {error && (
-              <div className="text-xs text-red-600 mb-3">{error}</div>
-            )}
+            {error && <div className="text-xs text-red-600 mb-3">{error}</div>}
+
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -425,6 +392,7 @@ export default function ChannelView({ channel, onRemoved }) {
               >
                 Close
               </button>
+
               <button
                 type="button"
                 onClick={handleJoin}

@@ -10,6 +10,7 @@ router.get('/my-channels', auth, channelController.getMyChannels);
 
 router.get('/:id/members', auth, channelController.getChannelMembers);
 router.post('/:id/join', auth, channelController.joinChannel);
+router.post('/:id/leave', auth, channelController.leaveChannel);
 router.post('/:id/invite', auth, channelController.inviteUser);
 router.delete('/:id', auth, channelController.deleteChannel);
 router.get('/:id', auth, channelController.getChannel);
