@@ -29,17 +29,30 @@ const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http:
   .map((u) => u.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      if (CLIENT_URLS.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS-blocked " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  })
-);
+console.log("CLIENT_URLS:", CLIENT_URLS);
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true); // server-to-server, Postman, etc.
+
+    // Allow any localhost port during development
+    if (origin.startsWith("http://localhost:")) {
+      return callback(null, true);
+    }
+
+    if (CLIENT_URLS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("CORS blocked origin:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
 
 app.use("/api/auth", AuthRouter);
 app.use("/api/channels", ChannelRouter);
@@ -82,8 +95,8 @@ const PORT = process.env.PORT || 3002;
 connectDB()
   .then(() => {
     server.listen(PORT, () => {
-      console.log("Server running:", PORT);
-      console.log("Origins:", CLIENT_URLS);
+      console.log("Server running on port:", PORT);
+      console.log("Allowed origins:", CLIENT_URLS);
     });
   })
   .catch((err) => {
@@ -91,5 +104,11 @@ connectDB()
     process.exit(1);
   });
 
-process.on("unhandledRejection", (reason) => console.error("Unhandled:", reason));
-process.on("uncaughtException", (err) => console.error("Uncaught:", err));
+process.on("unhandledRejection", (reason) =>
+  console.error("Unhandled Rejection:", reason)
+);
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+  process.exit(1);
+});
