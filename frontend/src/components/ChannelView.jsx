@@ -1,21 +1,23 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
 
-export default function ChannelView({ channelId }) {
+export default function ChannelView({ channel, onRemoved }) {
   const token = localStorage.getItem("token");
   const userId = localStorage.getItem("userId");
+  const channelId = channel?._id;
 
-  const [channel, setChannel] = useState(null);
+  const [channelData, setChannelData] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [loadingChannel, setLoadingChannel] = useState(true);
+  const [loadingChannel, setLoadingChannel] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [joinLoading, setJoinLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [joinLoading, setJoinLoading] = useState(false);
   const [text, setText] = useState("");
-  const [popup, setPopup] = useState(false);
+  const [error, setError] = useState("");
+  const [showJoinPopup, setShowJoinPopup] = useState(false);
 
-  const authHeaders = {
+  const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
   };
@@ -23,150 +25,299 @@ export default function ChannelView({ channelId }) {
   const fetchChannel = useCallback(async () => {
     if (!channelId) return;
     setLoadingChannel(true);
-
-    const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
-      headers: authHeaders,
-    });
-
-    const data = await res.json();
-    setChannel(data);
-
-    if (!data.isMember) {
-      setPopup(true);
-    } else {
-      setPopup(false);
-      fetchMessages();
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to load channel");
+        setLoadingChannel(false);
+        return;
+      }
+      setChannelData(data);
+      if (!data.isMember) {
+        setShowJoinPopup(true);
+        setMessages([]);
+      } else {
+        setShowJoinPopup(false);
+      }
+    } catch {
+      setError("Network error loading channel");
+    } finally {
+      setLoadingChannel(false);
     }
+  }, [channelId, token]);
 
-    setLoadingChannel(false);
-  }, [channelId]);
-
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     if (!channelId) return;
+    if (!channelData?.isMember) return;
     setLoadingMessages(true);
-
-    const res = await fetch(`${API_URL}/api/messages/${channelId}`, {
-      headers: authHeaders,
-    });
-
-    if (res.status === 403) {
-      setPopup(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/messages/${channelId}`, {
+        headers,
+      });
+      if (res.status === 403) {
+        setShowJoinPopup(true);
+        setMessages([]);
+        setLoadingMessages(false);
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to load messages");
+        setLoadingMessages(false);
+        return;
+      }
+      const msgs = Array.isArray(data) ? [...data].reverse() : [];
+      setMessages(msgs);
+    } catch {
+      setError("Network error loading messages");
+    } finally {
       setLoadingMessages(false);
-      return;
     }
+  }, [channelId, token, channelData?.isMember]);
 
-    const data = await res.json();
-    setMessages(data.reverse());
-    setLoadingMessages(false);
-  };
+  useEffect(() => {
+    setChannelData(null);
+    setMessages([]);
+    setText("");
+    setShowJoinPopup(false);
+    if (channelId) fetchChannel();
+  }, [channelId, fetchChannel]);
+
+  useEffect(() => {
+    if (channelData?.isMember) fetchMessages();
+  }, [channelData?.isMember, fetchMessages]);
 
   const handleJoin = async () => {
+    if (!channelId) return;
     setJoinLoading(true);
-
-    const res = await fetch(`${API_URL}/api/channels/${channelId}/join`, {
-      method: "POST",
-      headers: authHeaders,
-    });
-
-    const data = await res.json();
-    setJoinLoading(false);
-
-    if (res.status === 200) {
-      setChannel(data);
-      setPopup(false);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/channels/${channelId}/join`, {
+        method: "POST",
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to join channel");
+        setJoinLoading(false);
+        return;
+      }
+      setChannelData({ ...data, isMember: true });
+      setShowJoinPopup(false);
+      setJoinLoading(false);
       fetchMessages();
+    } catch {
+      setError("Network error joining channel");
+      setJoinLoading(false);
     }
   };
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
-    setSending(true);
-
-    const res = await fetch(`${API_URL}/api/messages`, {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify({ channelId, text }),
-    });
-
-    if (res.status === 403) {
-      setPopup(true);
-      setSending(false);
+    if (!text.trim() || !channelId) return;
+    if (!channelData?.isMember) {
+      setShowJoinPopup(true);
       return;
     }
-
-    const msg = await res.json();
-    setMessages((prev) => [...prev, msg]);
-    setText("");
-    setSending(false);
+    setSending(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ channelId, text }),
+      });
+      if (res.status === 403) {
+        setShowJoinPopup(true);
+        setSending(false);
+        return;
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to send message");
+        setSending(false);
+        return;
+      }
+      setMessages((prev) => [...prev, data]);
+      setText("");
+    } catch {
+      setError("Network error sending message");
+    } finally {
+      setSending(false);
+    }
   };
 
-  useEffect(() => {
-    fetchChannel();
-  }, [fetchChannel]);
+  const handleDeleteChannel = async () => {
+    if (!channelId) return;
+    const ok = window.confirm(
+      `Delete channel "${channelData?.name || channel?.name}" permanently?`
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
+        method: "DELETE",
+        headers,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || data.message || "Failed to delete channel");
+        return;
+      }
+      if (onRemoved) onRemoved(channelId);
+    } catch {
+      alert("Network error deleting channel");
+    }
+  };
 
-  if (!channelId) return <div>Select a channel</div>;
-  if (loadingChannel) return <div>Loading channel...</div>;
-  if (!channel) return <div>Channel not found</div>;
+  if (!channelId) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <h2 className="text-2xl font-bold text-gray-800">Select a channel</h2>
+        <p className="text-gray-600">Or join one by name or ID</p>
+      </div>
+    );
+  }
+
+  if (loadingChannel) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-gray-600">
+        Loading channel...
+      </div>
+    );
+  }
+
+  if (!channelData) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-red-600">
+        {error || "Failed to load channel"}
+      </div>
+    );
+  }
+
+  const isMember = !!channelData.isMember;
 
   return (
-    <div className="relative h-full flex flex-col bg-white rounded-xl shadow">
-      <div className="px-4 py-3 border-b flex justify-between">
+    <div className="flex-1 flex flex-col">
+      <div className="flex items-center justify-between pb-3 border-b">
         <div>
-          <h2 className="font-bold">{channel.name}</h2>
+          <h2 className="text-xl font-semibold text-gray-800">
+            {channelData.name}
+          </h2>
           <p className="text-xs text-gray-500">
-            {channel.members?.length || 0} members
+            {Array.isArray(channelData.members)
+              ? channelData.members.length
+              : 0}{" "}
+            members
           </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={fetchMessages}
+            className="px-3 py-1 text-sm rounded bg-gray-100 text-gray-700"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={handleDeleteChannel}
+            className="px-3 py-1 text-sm rounded bg-red-50 text-red-600 border border-red-200"
+          >
+            Delete Channel
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      <div className="flex-1 overflow-y-auto py-3 space-y-3">
         {loadingMessages ? (
-          <div>Loading messages...</div>
+          <div className="text-gray-500 text-sm">Loading messages...</div>
+        ) : !isMember ? (
+          <div className="text-gray-500 text-sm">
+            Join this channel to see messages.
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
-          messages.map((m) => (
-            <div key={m._id} className="bg-gray-100 rounded-lg p-2">
-              <div className="text-xs font-semibold">
-                {m.sender?.username || "User"}
+          messages.map((m) => {
+            const mine =
+              m.sender && String(m.sender._id) === String(userId);
+            return (
+              <div
+                key={m._id}
+                className={`px-3 py-2 rounded-lg max-w-xl ${
+                  mine ? "ml-auto bg-blue-100" : "bg-gray-100"
+                }`}
+              >
+                <div className="text-xs font-semibold text-gray-600 mb-0.5">
+                  {mine ? "You" : m.sender?.username || "User"}
+                </div>
+                <div className="text-sm text-gray-900 whitespace-pre-wrap">
+                  {m.text}
+                </div>
               </div>
-              <div>{m.text}</div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
-      <form onSubmit={handleSend} className="p-3 border-t flex gap-2">
+      <form
+        onSubmit={handleSend}
+        className="pt-3 border-t flex items-center gap-2"
+      >
         <input
-          disabled={!channel.isMember}
+          type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          disabled={!isMember}
           placeholder={
-            channel.isMember ? "Type message..." : "Join to send messages"
+            isMember ? "Type a message..." : "Join this channel to send messages"
           }
-          className="flex-1 border rounded-lg px-3 py-2"
+          className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
         />
         <button
-          disabled={!channel.isMember || sending}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg disabled:opacity-60"
+          type="submit"
+          disabled={!isMember || sending}
+          className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60"
         >
-          Send
+          {sending ? "Sending..." : "Send"}
         </button>
       </form>
 
-      {popup && (
-        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-xl w-80 text-center space-y-4">
-            <div className="font-bold text-lg">Join {channel.name}</div>
-            <div className="text-sm text-gray-600">
-              Join to see messages and chat with members.
+      {showJoinPopup && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-lg">
+            <h3 className="text-lg font-semibold mb-2">
+              Join “{channelData.name}”
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              You are not a member of this channel. Join to see messages and
+              start chatting.
+            </p>
+            {error && (
+              <div className="text-xs text-red-600 mb-3">{error}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowJoinPopup(false)}
+                className="px-3 py-1.5 text-sm rounded-lg bg-gray-100 text-gray-700"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={handleJoin}
+                disabled={joinLoading}
+                className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white disabled:opacity-60"
+              >
+                {joinLoading ? "Joining..." : "Join Channel"}
+              </button>
             </div>
-            <button
-              onClick={handleJoin}
-              disabled={joinLoading}
-              className="bg-blue-600 w-full text-white py-2 rounded-lg disabled:opacity-60"
-            >
-              {joinLoading ? "Joining..." : "Join Channel"}
-            </button>
           </div>
         </div>
       )}
