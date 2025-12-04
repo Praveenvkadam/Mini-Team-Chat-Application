@@ -1,4 +1,3 @@
-// src/components/ChannelView.jsx
 import { useCallback, useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
@@ -94,7 +93,9 @@ export default function ChannelView({ channel, onRemoved }) {
 
       if (!res.ok) {
         setError(
-          data.error || data.message || `Failed to load messages (${res.status})`
+          data.error ||
+            data.message ||
+            `Failed to load messages (${res.status})`
         );
         setLoadingMessages(false);
         return;
@@ -126,6 +127,7 @@ export default function ChannelView({ channel, onRemoved }) {
     if (!channelId) return;
     setJoinLoading(true);
     setError("");
+
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/join`, {
         method: "POST",
@@ -146,10 +148,11 @@ export default function ChannelView({ channel, onRemoved }) {
         return;
       }
 
-      setChannelData({ ...data, isMember: true });
-      setShowJoinPopup(false);
+      // reload channel so isMember/isOwner flags are correct
       setJoinLoading(false);
-      fetchMessages();
+      setShowJoinPopup(false);
+      await fetchChannel();
+      await fetchMessages();
     } catch (err) {
       console.error("joinChannel error", err);
       setError("Network error joining channel");
@@ -157,21 +160,16 @@ export default function ChannelView({ channel, onRemoved }) {
     }
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!text.trim() || !channelId) return;
-    if (!channelData?.isMember) {
-      setShowJoinPopup(true);
-      return;
-    }
-    setSending(true);
-    setError("");
+  const handleLeaveChannel = async () => {
+    if (!channelId) return;
+    const ok = window.confirm(`Leave channel "${channelData?.name}"?`);
+    if (!ok) return;
 
+    setError("");
     try {
-      const res = await fetch(`${API_URL}/api/messages`, {
+      const res = await fetch(`${API_URL}/api/channels/${channelId}/leave`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ channelId, text }),
       });
 
       let data;
@@ -182,25 +180,18 @@ export default function ChannelView({ channel, onRemoved }) {
         data = { message: text };
       }
 
-      if (res.status === 403) {
-        setShowJoinPopup(true);
-        setSending(false);
-        return;
-      }
-
       if (!res.ok) {
-        setError(data.error || data.message || "Failed to send message");
-        setSending(false);
+        setError(data.error || data.message || "Failed to leave channel");
         return;
       }
 
-      setMessages((prev) => [...prev, data]);
-      setText("");
+      // user no longer member – clear messages and show join popup
+      setChannelData({ ...data, isMember: false });
+      setMessages([]);
+      setShowJoinPopup(true);
     } catch (err) {
-      console.error("sendMessage error", err);
-      setError("Network error sending message");
-    } finally {
-      setSending(false);
+      console.error("leaveChannel error", err);
+      setError("Network error leaving channel");
     }
   };
 
@@ -237,6 +228,54 @@ export default function ChannelView({ channel, onRemoved }) {
     }
   };
 
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!text.trim() || !channelId) return;
+    if (!channelData?.isMember) {
+      setShowJoinPopup(true);
+      return;
+    }
+
+    setSending(true);
+    setError("");
+
+    try {
+      const res = await fetch(`${API_URL}/api/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ channelId, text }),
+      });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const textBody = await res.text();
+        data = { message: textBody };
+      }
+
+      if (res.status === 403) {
+        setShowJoinPopup(true);
+        setSending(false);
+        return;
+      }
+
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to send message");
+        setSending(false);
+        return;
+      }
+
+      setMessages((prev) => [...prev, data]);
+      setText("");
+    } catch (err) {
+      console.error("sendMessage error", err);
+      setError("Network error sending message");
+    } finally {
+      setSending(false);
+    }
+  };
+
   if (!channelId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center">
@@ -263,6 +302,9 @@ export default function ChannelView({ channel, onRemoved }) {
   }
 
   const isMember = !!channelData.isMember;
+  const isOwner =
+    channelData.createdBy &&
+    String(channelData.createdBy._id) === String(userId);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -286,13 +328,24 @@ export default function ChannelView({ channel, onRemoved }) {
           >
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={handleDeleteChannel}
-            className="px-3 py-1 text-sm rounded bg-red-50 text-red-600 border border-red-200"
-          >
-            Delete Channel
-          </button>
+
+          {isOwner ? (
+            <button
+              type="button"
+              onClick={handleDeleteChannel}
+              className="px-3 py-1 text-sm rounded bg-red-50 text-red-600 border border-red-200"
+            >
+              Delete Channel
+            </button>
+          ) : isMember ? (
+            <button
+              type="button"
+              onClick={handleLeaveChannel}
+              className="px-3 py-1 text-sm rounded bg-yellow-50 text-yellow-700 border border-yellow-200"
+            >
+              Leave Channel
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -307,7 +360,8 @@ export default function ChannelView({ channel, onRemoved }) {
           <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
           messages.map((m) => {
-            const mine = m.sender && String(m.sender._id) === String(userId);
+            const mine =
+              m.sender && String(m.sender._id) === String(userId);
             return (
               <div
                 key={m._id}
