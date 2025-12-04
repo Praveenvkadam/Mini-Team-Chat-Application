@@ -1,15 +1,21 @@
+
 const express = require('express');
 const router = express.Router();
+const channelController = require('../controllers/channelController');
 const auth = require('../middleware/AuthMiddleware');
-const ctrl = require('../controllers/channelController');
 
-router.post('/', auth, ctrl.createChannel);
-router.post('/:id/join', auth, ctrl.joinChannel);
-router.get('/', auth, ctrl.getChannels);
-router.get('/mine', auth, ctrl.getMyChannels);
-router.delete('/:id', auth, ctrl.deleteChannel);
-router.get("/:id/members", auth, ctrl.getChannelMembers);
+router.get('/channels', auth, channelController.getChannels);
+router.post('/channels', auth, channelController.createChannel);
 
 
+router.get('/channels/:id/members', auth, channelController.getChannelMembers);
+router.post('/channels/:id/join', auth, channelController.joinChannel);
+router.delete('/channels/:id', auth, channelController.deleteChannel);
+
+
+router.get('/channels/:id', auth, channelController.getChannel);
+
+router.get('/my-channels', auth, channelController.getMyChannels);
+router.post('/channels/:id/invite', auth, channelController.inviteUser);
 
 module.exports = router;

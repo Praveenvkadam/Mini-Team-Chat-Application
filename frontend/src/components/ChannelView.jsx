@@ -1,3 +1,4 @@
+// src/components/ChannelView.jsx
 import { useCallback, useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
@@ -26,24 +27,39 @@ export default function ChannelView({ channel, onRemoved }) {
     if (!channelId) return;
     setLoadingChannel(true);
     setError("");
+
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
         headers,
       });
-      const data = await res.json();
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        data = { message: text };
+      }
+
       if (!res.ok) {
-        setError(data.error || data.message || "Failed to load channel");
+        setChannelData(null);
+        setError(
+          data.error || data.message || `Failed to load channel (${res.status})`
+        );
         setLoadingChannel(false);
         return;
       }
+
       setChannelData(data);
+
       if (!data.isMember) {
         setShowJoinPopup(true);
         setMessages([]);
       } else {
         setShowJoinPopup(false);
       }
-    } catch {
+    } catch (err) {
+      console.error("fetchChannel error", err);
       setError("Network error loading channel");
     } finally {
       setLoadingChannel(false);
@@ -55,25 +71,39 @@ export default function ChannelView({ channel, onRemoved }) {
     if (!channelData?.isMember) return;
     setLoadingMessages(true);
     setError("");
+
     try {
       const res = await fetch(`${API_URL}/api/messages/${channelId}`, {
         headers,
       });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        data = { message: text };
+      }
+
       if (res.status === 403) {
         setShowJoinPopup(true);
         setMessages([]);
         setLoadingMessages(false);
         return;
       }
-      const data = await res.json();
+
       if (!res.ok) {
-        setError(data.error || data.message || "Failed to load messages");
+        setError(
+          data.error || data.message || `Failed to load messages (${res.status})`
+        );
         setLoadingMessages(false);
         return;
       }
+
       const msgs = Array.isArray(data) ? [...data].reverse() : [];
       setMessages(msgs);
-    } catch {
+    } catch (err) {
+      console.error("fetchMessages error", err);
       setError("Network error loading messages");
     } finally {
       setLoadingMessages(false);
@@ -101,17 +131,27 @@ export default function ChannelView({ channel, onRemoved }) {
         method: "POST",
         headers,
       });
-      const data = await res.json();
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        data = { message: text };
+      }
+
       if (!res.ok) {
         setError(data.error || data.message || "Failed to join channel");
         setJoinLoading(false);
         return;
       }
+
       setChannelData({ ...data, isMember: true });
       setShowJoinPopup(false);
       setJoinLoading(false);
       fetchMessages();
-    } catch {
+    } catch (err) {
+      console.error("joinChannel error", err);
       setError("Network error joining channel");
       setJoinLoading(false);
     }
@@ -126,26 +166,38 @@ export default function ChannelView({ channel, onRemoved }) {
     }
     setSending(true);
     setError("");
+
     try {
       const res = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
         headers,
         body: JSON.stringify({ channelId, text }),
       });
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        data = { message: text };
+      }
+
       if (res.status === 403) {
         setShowJoinPopup(true);
         setSending(false);
         return;
       }
-      const data = await res.json();
+
       if (!res.ok) {
         setError(data.error || data.message || "Failed to send message");
         setSending(false);
         return;
       }
+
       setMessages((prev) => [...prev, data]);
       setText("");
-    } catch {
+    } catch (err) {
+      console.error("sendMessage error", err);
       setError("Network error sending message");
     } finally {
       setSending(false);
@@ -158,18 +210,29 @@ export default function ChannelView({ channel, onRemoved }) {
       `Delete channel "${channelData?.name || channel?.name}" permanently?`
     );
     if (!ok) return;
+
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
         method: "DELETE",
         headers,
       });
-      const data = await res.json().catch(() => ({}));
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text();
+        data = { message: text };
+      }
+
       if (!res.ok) {
         alert(data.error || data.message || "Failed to delete channel");
         return;
       }
+
       if (onRemoved) onRemoved(channelId);
-    } catch {
+    } catch (err) {
+      console.error("deleteChannel error", err);
       alert("Network error deleting channel");
     }
   };
@@ -244,8 +307,7 @@ export default function ChannelView({ channel, onRemoved }) {
           <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
           messages.map((m) => {
-            const mine =
-              m.sender && String(m.sender._id) === String(userId);
+            const mine = m.sender && String(m.sender._id) === String(userId);
             return (
               <div
                 key={m._id}
