@@ -43,7 +43,7 @@ exports.createChannel = async (req, res) => {
 
 exports.joinChannel = async (req, res) => {
   try {
-    const identifier = safeTrim(req.params.id); // can be _id or name
+    const identifier = safeTrim(req.params.id);
     const userId = req.userId;
 
     if (!identifier) {

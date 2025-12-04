@@ -8,6 +8,7 @@ import React, {
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import ChannelView from "../components/ChannelView";
+import { socket } from "../socket";
 
 const MenuIcon = ({ size = 20 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -85,33 +86,28 @@ const SearchIcon = ({ size = 14 }) => (
 export default function Home() {
   const navigate = useNavigate();
   const drawerRef = useRef(null);
-
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
 
-  const [token, setToken] = useState(
-    () => localStorage.getItem("token") || null
-  );
-
+  const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [onlineUserIds, setOnlineUserIds] = useState([]);
   const [joinChannelInput, setJoinChannelInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
-
   const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
   const [mobileRightOpen, setMobileRightOpen] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      navigate("/login");
-    }
+    if (!token) navigate("/login");
   }, [token, navigate]);
 
   const buildHeaders = useCallback(() => {
-    const headers = { Accept: "application/json" };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
+    const h = { Accept: "application/json" };
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
   }, [token]);
 
   const handleAuthError = useCallback(
@@ -128,10 +124,7 @@ export default function Home() {
   );
 
   const short = (id) =>
-    id
-      ? id.toString().slice(0, 8) +
-        (id.toString().length > 8 ? "…" : "")
-      : "";
+    id ? id.toString().slice(0, 8) + (id.toString().length > 8 ? "…" : "") : "";
 
   const fetchChannels = useCallback(async () => {
     setLoading(true);
@@ -140,29 +133,23 @@ export default function Home() {
       const res = await fetch(`${API_URL}/api/channels`, {
         headers: buildHeaders(),
       });
-
       if (await handleAuthError(res)) return;
-
       if (!res.ok) {
-        let body;
-        try {
-          body = await res.json();
-        } catch (e) {
-          body = { message: await res.text() };
-        }
+        const body = await res.json().catch(async () => ({
+          message: await res.text(),
+        }));
         setChannels([]);
         setSelectedChannel(null);
+        setMembers([]);
         setError(body.error || body.message || "Failed to load channels");
         return;
       }
-
       const data = await res.json();
       setChannels(data.channels || []);
       setSelectedChannel((prev) =>
         prev ? prev : (data.channels && data.channels[0]) || null
       );
-    } catch (err) {
-      console.error("fetchChannels err:", err);
+    } catch {
       setError("Network error while fetching channels");
     } finally {
       setLoading(false);
@@ -172,6 +159,66 @@ export default function Home() {
   useEffect(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  const fetchMembers = useCallback(
+    async (id) => {
+      if (!id) {
+        setMembers([]);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_URL}/api/channels/${id}/members`, {
+          headers: buildHeaders(),
+        });
+        if (await handleAuthError(res)) return;
+        if (!res.ok) {
+          const body = await res.json().catch(async () => ({
+            message: await res.text(),
+          }));
+          setMembers([]);
+          setError(body.error || body.message || "Failed to load members");
+          return;
+        }
+        const data = await res.json();
+        setMembers(data.members || []);
+      } catch {
+        setError("Network error while fetching members");
+      }
+    },
+    [API_URL, buildHeaders, handleAuthError]
+  );
+
+  useEffect(() => {
+    if (selectedChannel && selectedChannel._id) {
+      fetchMembers(selectedChannel._id);
+    } else {
+      setMembers([]);
+    }
+  }, [selectedChannel, fetchMembers]);
+
+  useEffect(() => {
+    function handleSnapshot({ onlineUserIds: ids }) {
+      setOnlineUserIds((ids || []).map(String));
+    }
+
+    function handlePresence({ userId, isOnline }) {
+      const id = String(userId);
+      setOnlineUserIds((prev) => {
+        const set = new Set(prev);
+        if (isOnline) set.add(id);
+        else set.delete(id);
+        return Array.from(set);
+      });
+    }
+
+    socket.on("presence:snapshot", handleSnapshot);
+    socket.on("presence:update", handlePresence);
+
+    return () => {
+      socket.off("presence:snapshot", handleSnapshot);
+      socket.off("presence:update", handlePresence);
+    };
+  }, []);
 
   const filteredChannels = useMemo(() => {
     const q = (query || "").trim().toLowerCase();
@@ -194,20 +241,14 @@ export default function Home() {
             headers: buildHeaders(),
           }
         );
-
         if (await handleAuthError(res)) return;
-
         if (!res.ok) {
-          let body;
-          try {
-            body = await res.json();
-          } catch (e) {
-            body = { message: await res.text() };
-          }
+          const body = await res.json().catch(async () => ({
+            message: await res.text(),
+          }));
           alert(body.error || body.message || "Join failed");
           return;
         }
-
         const data = await res.json();
         setChannels((prev) =>
           prev.some((c) => c._id === data._id) ? prev : [...prev, data]
@@ -215,8 +256,7 @@ export default function Home() {
         setSelectedChannel(data);
         setJoinChannelInput("");
         setMobileLeftOpen(false);
-      } catch (err) {
-        console.error("joinChannel err:", err);
+      } catch {
         setError("Network error while joining channel");
       }
     },
@@ -228,6 +268,7 @@ export default function Home() {
     setSelectedChannel((prev) =>
       prev && prev._id === id ? null : prev
     );
+    setMembers([]);
   }, []);
 
   useEffect(() => {
@@ -256,6 +297,7 @@ export default function Home() {
   const renderMemberCard = (m) => {
     const name = m.name || m.username || m.email || "User";
     const initial = name[0]?.toUpperCase() || "U";
+    const online = onlineUserIds.includes(String(m._id));
 
     return (
       <div
@@ -274,7 +316,7 @@ export default function Home() {
           </div>
         )}
 
-        <div>
+        <div className="flex-1">
           <div className="text-sm font-medium text-gray-700">
             {name}
           </div>
@@ -284,6 +326,12 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        <span
+          className={`w-3 h-3 rounded-full ${
+            online ? "bg-green-500" : "bg-red-500"
+          }`}
+        />
       </div>
     );
   };
@@ -312,20 +360,17 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex items-start gap-6">
-          {/* LEFT SIDEBAR - desktop */}
           <aside className="hidden md:block md:w-72 lg:w-80">
             <div className="bg-white rounded-lg p-4 h-[calc(100vh-96px)] overflow-auto">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-gray-900 font-semibold">Channels</h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={fetchChannels}
-                    className="text-sm bg-gray-200 px-2 py-1 rounded flex items-center gap-2 text-gray-800"
-                  >
-                    <RefreshIcon /> Refresh
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={fetchChannels}
+                  className="text-sm bg-gray-200 px-2 py-1 rounded flex items-center gap-2 text-gray-800"
+                >
+                  <RefreshIcon /> Refresh
+                </button>
               </div>
 
               <div className="mb-4">
@@ -414,103 +459,6 @@ export default function Home() {
             </div>
           </aside>
 
-          {mobileLeftOpen && (
-            <div className="md:hidden fixed inset-0 z-40">
-              <div
-                className="absolute inset-0 bg-black/40"
-                onClick={() => setMobileLeftOpen(false)}
-              />
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Channels"
-                ref={drawerRef}
-                tabIndex={-1}
-                className="absolute left-3 top-20 w-[86%] max-w-xs bg-white rounded-lg p-4 shadow-lg h-[calc(100vh-140px)] overflow-auto transform transition-transform duration-200 ease-out translate-x-0"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setMobileLeftOpen(false);
-                }}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-gray-900 font-semibold">Channels</h3>
-                  <button
-                    type="button"
-                    onClick={() => setMobileLeftOpen(false)}
-                    className="text-gray-700 px-2"
-                  >
-                    Close
-                  </button>
-                </div>
-
-                {loading ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className="animate-pulse bg-gray-200 h-14 rounded"
-                      />
-                    ))}
-                  </div>
-                ) : filteredChannels.length === 0 ? (
-                  <div className="text-gray-700">No channels yet</div>
-                ) : (
-                  <ul className="space-y-3">
-                    {filteredChannels.map((ch) => (
-                      <li
-                        key={ch._id}
-                        onClick={() => {
-                          setSelectedChannel(ch);
-                          setMobileLeftOpen(false);
-                        }}
-                        className="p-3 rounded-lg cursor-pointer bg-gray-100 hover:bg-gray-200 text-gray-900"
-                      >
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="text-gray-900 font-medium truncate">
-                              {ch.name}
-                            </div>
-                            <div className="text-xs text-gray-600 truncate">
-                              ID: {short(ch._id)}
-                            </div>
-                          </div>
-                          <div className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full ml-3">
-                            {Array.isArray(ch.members)
-                              ? ch.members.length
-                              : "—"}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                <div className="mt-4 pt-3 border-t border-gray-300">
-                  <div className="flex gap-2">
-                    <input
-                      value={joinChannelInput}
-                      onChange={(e) => setJoinChannelInput(e.target.value)}
-                      placeholder="Channel name or ID"
-                      className="flex-1 p-2 border rounded bg-gray-100 text-gray-800 placeholder-gray-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={joinChannel}
-                      className="px-3 py-2 rounded bg-emerald-500 text-white"
-                    >
-                      Join
-                    </button>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="mt-3 text-sm text-red-600">
-                    {error}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           <main className="flex-1 min-w-0">
             <div className="bg-white rounded-lg p-4 h-[calc(100vh-96px)] flex flex-col">
               {selectedChannel ? (
@@ -526,25 +474,6 @@ export default function Home() {
                   <p className="text-gray-600">
                     Or join one by name or ID
                   </p>
-                  <div className="w-full max-w-md mt-4">
-                    <div className="flex gap-2">
-                      <input
-                        value={joinChannelInput}
-                        onChange={(e) =>
-                          setJoinChannelInput(e.target.value)
-                        }
-                        placeholder="Channel name or ID"
-                        className="flex-1 p-2 border rounded"
-                      />
-                      <button
-                        type="button"
-                        onClick={joinChannel}
-                        className="px-4 py-2 bg-blue-600 text-white rounded"
-                      >
-                        Join
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -558,16 +487,12 @@ export default function Home() {
                     {selectedChannel.name}
                   </h4>
                   <p className="text-sm text-gray-600">
-                    {Array.isArray(selectedChannel.members)
-                      ? selectedChannel.members.length
-                      : 0}{" "}
-                    members
+                    {members.length} members
                   </p>
 
                   <div className="mt-4 space-y-3">
-                    {selectedChannel.members &&
-                    selectedChannel.members.length ? (
-                      selectedChannel.members.map(renderMemberCard)
+                    {members && members.length ? (
+                      members.map(renderMemberCard)
                     ) : (
                       <div className="text-sm text-gray-600">
                         No members to show
@@ -608,10 +533,7 @@ export default function Home() {
                           {selectedChannel.name}
                         </h4>
                         <p className="text-sm text-gray-600">
-                          {Array.isArray(selectedChannel.members)
-                            ? selectedChannel.members.length
-                            : 0}{" "}
-                          members
+                          {members.length} members
                         </p>
                       </div>
                       <button
@@ -624,9 +546,8 @@ export default function Home() {
                     </div>
 
                     <div className="mt-4 space-y-3">
-                      {selectedChannel.members &&
-                      selectedChannel.members.length ? (
-                        selectedChannel.members.map(renderMemberCard)
+                      {members && members.length ? (
+                        members.map(renderMemberCard)
                       ) : (
                         <div className="text-sm text-gray-600">
                           No members to show

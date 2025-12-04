@@ -31,19 +31,19 @@ const CLIENT_URLS = (process.env.CLIENT_URLS || process.env.CLIENT_URL || "http:
 
 console.log("CLIENT_URLS:", CLIENT_URLS);
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;                               // Postman / server-to-server
+  if (origin.startsWith("http://localhost:")) return true; // any localhost port in dev
+  if (origin.endsWith(".vercel.app")) return true;         // any Vercel deployment
+  if (CLIENT_URLS.includes(origin)) return true;           // explicit allow-list
+  return false;
+};
+
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin) return callback(null, true); // server-to-server, Postman, etc.
-
-    // Allow any localhost port during development
-    if (origin.startsWith("http://localhost:")) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
-
-    if (CLIENT_URLS.includes(origin)) {
-      return callback(null, true);
-    }
-
     console.log("CORS blocked origin:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
@@ -62,7 +62,13 @@ app.get("/", (req, res) => res.json({ message: "API running" }));
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URLS,
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin)) {
+        return callback(null, true);
+      }
+      console.log("Socket.io CORS blocked origin:", origin);
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -96,7 +102,7 @@ connectDB()
   .then(() => {
     server.listen(PORT, () => {
       console.log("Server running on port:", PORT);
-      console.log("Allowed origins:", CLIENT_URLS);
+      console.log("Allowed origins (env):", CLIENT_URLS);
     });
   })
   .catch((err) => {
@@ -104,9 +110,9 @@ connectDB()
     process.exit(1);
   });
 
-process.on("unhandledRejection", (reason) =>
-  console.error("Unhandled Rejection:", reason)
-);
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+});
 
 process.on("uncaughtException", (err) => {
   console.error("Uncaught Exception:", err);
