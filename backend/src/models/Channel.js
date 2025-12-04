@@ -23,10 +23,9 @@ ChannelSchema.options.toJSON.transform = function (doc, ret) {
   return ret;
 };
 
-ChannelSchema.index({ name: 1 });
 ChannelSchema.index({ members: 1 });
 ChannelSchema.index({ createdBy: 1 });
 ChannelSchema.index({ isPrivate: 1 });
 
-
-module.exports = mongoose.models.Channel || mongoose.model('Channel', ChannelSchema);
+module.exports =
+  mongoose.models.Channel || mongoose.model('Channel', ChannelSchema);
