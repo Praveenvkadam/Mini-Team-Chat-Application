@@ -4,6 +4,7 @@ import UpdateProfile from "./UpdateProfile";
 import CreateChannel from "./Createchannel";
 
 export default function Navbar() {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -11,6 +12,7 @@ export default function Navbar() {
   const [showFullId, setShowFullId] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [hasRequestNotification, setHasRequestNotification] = useState(false);
 
   useEffect(() => {
     const load = () => {
@@ -65,6 +67,7 @@ export default function Navbar() {
     setMobileOpen(false);
     setShowProfileModal(false);
     setShowCreateModal(false);
+    setHasRequestNotification(false);
     navigate("/");
   }, [navigate]);
 
@@ -117,7 +120,86 @@ export default function Navbar() {
     );
   };
 
-  const userId = (user && (user._id || user.id || user.code)) || "";
+  const userId =
+    (user && (user._id || user.id || user.userId || user.code)) || "";
+  const userIdStr = userId ? String(userId) : "";
+  const seenKey = userIdStr ? `requestSeenAt:${userIdStr}` : null;
+
+  // Poll requests and compute "new" ones relative to lastSeen timestamp
+  useEffect(() => {
+    if (!userIdStr) {
+      setHasRequestNotification(false);
+      return;
+    }
+
+    const token = localStorage.getItem("token") || "";
+    if (!token) {
+      setHasRequestNotification(false);
+      return;
+    }
+
+    const loadRequests = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/private-requests`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          return;
+        }
+        const data = await res.json();
+        const list = Array.isArray(data.requests) ? data.requests : [];
+
+        const lastSeenRaw = seenKey ? localStorage.getItem(seenKey) : null;
+        const lastSeen = lastSeenRaw ? Number(lastSeenRaw) : 0;
+
+        const has = list.some((r) => {
+          const requesterId =
+            (r.requester && (r.requester._id || r.requester.id)) ||
+            r.requesterId ||
+            "";
+          const creatorId =
+            (r.creator && (r.creator._id || r.creator.id)) ||
+            r.creatorId ||
+            "";
+          const status = r.status || "pending";
+
+          const isCreator = creatorId && String(creatorId) === userIdStr;
+          const isRequester = requesterId && String(requesterId) === userIdStr;
+
+          const ts = new Date(
+            r.updatedAt || r.createdAt || new Date()
+          ).getTime();
+
+          // creator: new pending request after lastSeen
+          if (isCreator && status === "pending" && ts > lastSeen) return true;
+          // requester: new approval after lastSeen
+          if (isRequester && status === "approved" && ts > lastSeen)
+            return true;
+
+          return false;
+        });
+
+        setHasRequestNotification(has);
+      } catch (e) {
+        console.error("load navbar requests error", e);
+      }
+    };
+
+    loadRequests();
+    const intervalId = setInterval(loadRequests, 15000);
+    return () => clearInterval(intervalId);
+  }, [API_URL, userIdStr, seenKey]);
+
+  // When user opens Request page, mark everything as seen and clear dot
+  const handleOpenRequestPage = () => {
+    if (seenKey) {
+      localStorage.setItem(seenKey, Date.now().toString());
+    }
+    setHasRequestNotification(false);
+    setProfileOpen(false);
+    setMobileOpen(false);
+    navigate("/request");
+  };
 
   return (
     <>
@@ -135,16 +217,21 @@ export default function Navbar() {
                 setProfileOpen(false);
               }}
             >
-              <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-                WebChat
-              </span>
-              {/* <span className="hidden sm:inline text-xs text-slate-300">
-                Realtime chat
-              </span> */}
+              ChatApp
             </Link>
           </div>
 
           <div className="hidden md:flex items-center gap-4">
+            <button
+              onClick={handleOpenRequestPage}
+              className="relative px-3 py-2 rounded-lg border border-slate-600 text-sm text-slate-100 hover:bg-slate-800 transition-colors"
+            >
+              Request Page
+              {hasRequestNotification && (
+                <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-green-400 border border-slate-900" />
+              )}
+            </button>
+
             <button
               onClick={() => {
                 setProfileOpen(false);
@@ -258,7 +345,6 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Mobile toggle */}
           <div className="md:hidden flex items-center gap-3">
             {user && (
               <button
@@ -302,7 +388,6 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* Mobile dropdown */}
         {mobileOpen && (
           <div className="md:hidden border-t border-slate-800 bg-slate-900">
             <div className="px-4 py-3 space-y-2">
@@ -322,6 +407,26 @@ export default function Navbar() {
                       </p>
                     </div>
                   </div>
+
+                  <button
+                    onClick={() => {
+                      setMobileOpen(false);
+                      navigate("/home");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg border border-slate-600 text-sm text-slate-100 hover:bg-slate-800"
+                  >
+                    Home
+                  </button>
+
+                  <button
+                    onClick={handleOpenRequestPage}
+                    className="relative w-full text-left px-3 py-2 rounded-lg border border-slate-600 text-sm text-slate-100 hover:bg-slate-800"
+                  >
+                    Request Page
+                    {hasRequestNotification && (
+                      <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-green-400 border border-slate-900" />
+                    )}
+                  </button>
 
                   <button
                     onClick={() => {
@@ -356,9 +461,7 @@ export default function Navbar() {
                   )}
 
                   <button
-                    onClick={() => {
-                      logout();
-                    }}
+                    onClick={logout}
                     className="w-full text-left px-3 py-2 rounded-lg text-sm text-red-400 hover:bg-slate-800"
                   >
                     Sign out
@@ -366,6 +469,26 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
+                  <button
+                    onClick={() => {
+                      setMobileOpen(false);
+                      navigate("/home");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg border border-slate-600 text-sm text-slate-100 hover:bg-slate-800"
+                  >
+                    Home
+                  </button>
+
+                  <button
+                    onClick={handleOpenRequestPage}
+                    className="relative w-full text-left px-3 py-2 rounded-lg border border-slate-600 text-sm text-slate-100 hover:bg-slate-800"
+                  >
+                    Request Page
+                    {hasRequestNotification && (
+                      <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-green-400 border border-slate-900" />
+                    )}
+                  </button>
+
                   <button
                     onClick={() => {
                       setMobileOpen(false);
@@ -391,7 +514,6 @@ export default function Navbar() {
         )}
       </header>
 
-      {/* Profile modal */}
       {showProfileModal && (
         <div
           className="fixed inset-0 z-[99999] flex items-center justify-center"
@@ -427,7 +549,6 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* Create Channel modal — more blue */}
       {showCreateModal && (
         <div
           className="fixed inset-0 z-[99999] flex items-center justify-center"

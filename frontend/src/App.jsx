@@ -6,6 +6,9 @@ import Logout from "./auth/Logout";
 import Home from "./pages/Home"
 import CreateChannel from "./components/Createchannel"
 import UpdateProfile from "./components/UpdateProfile";
+import Request from "./components/Request";
+
+
 
 export default function App() {
   return (
@@ -18,8 +21,7 @@ export default function App() {
       <Route path="/home" element={<Home />} />
       <Route path="/createchannel" element={<CreateChannel/>}/>
       <Route path="/updateprofile" element={<UpdateProfile/>}/>
-
-
+      <Route path="/request" element={<Request/>}/>
     </Routes>
   );
 }

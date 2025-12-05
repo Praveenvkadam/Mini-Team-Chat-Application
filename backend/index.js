@@ -12,6 +12,7 @@ const AuthRouter = require("./src/routes/AuthRouter");
 const ChannelRouter = require("./src/routes/ChannelRouter");
 const setupSocketHandlers = require("./src/sockets/setupSocketHandlers");
 const MessageRouter = require("./src/routes/messageRouter");
+const privateRequestRoutes = require("./src/routes/privateRequestRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -23,6 +24,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
 
 const CLIENT_URLS = (
   process.env.CLIENT_URLS ||
@@ -56,6 +58,7 @@ app.use(cors(corsOptions));
 app.use("/api/auth", AuthRouter);
 app.use("/api/channels", ChannelRouter);
 app.use("/api/messages", MessageRouter);
+app.use("/api/private-requests", privateRequestRoutes);
 
 app.get("/", (req, res) => res.json({ message: "API running" }));
 

@@ -1,11 +1,9 @@
-// src/controllers/channelController.js
-const Channel = require('../models/Channel');
-const User = require('../models/User');
-const mongoose = require('mongoose');
+const Channel = require("../models/Channel");
+const User = require("../models/User");
+const mongoose = require("mongoose");
 
-const safeTrim = (v) => (typeof v === 'string' ? v.trim() : v);
+const safeTrim = (v) => (typeof v === "string" ? v.trim() : v);
 
-// CREATE CHANNEL
 exports.createChannel = async (req, res) => {
   try {
     const creatorId = req.userId;
@@ -38,8 +36,8 @@ exports.createChannel = async (req, res) => {
       .populate("leftMembers", "username name email profileUrl isOnline lastSeen")
       .lean();
 
-    const activeMembers = (populated.members || []).map(m => ({ ...m, active: true }));
-    const leftMembers = (populated.leftMembers || []).map(m => ({ ...m, active: false }));
+    const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
+    const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
     return res.status(201).json({ ...populated, members: combined });
@@ -49,7 +47,6 @@ exports.createChannel = async (req, res) => {
   }
 };
 
-// GET SINGLE CHANNEL (fixed: includes createdById and isOwner)
 exports.getChannel = async (req, res) => {
   try {
     const identifier = safeTrim(req.params.id);
@@ -83,12 +80,12 @@ exports.getChannel = async (req, res) => {
       .populate("leftMembers", "username name email profileUrl isOnline lastSeen")
       .lean();
 
-    const activeMembers = (populated.members || []).map(m => ({ ...m, active: true }));
-    const leftMembers = (populated.leftMembers || []).map(m => ({ ...m, active: false }));
+    const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
+    const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
     const createdById = populated.createdBy
-      ? (String(populated.createdBy._id || populated.createdBy))
+      ? String(populated.createdBy._id || populated.createdBy)
       : String(channel.createdBy);
 
     return res.json({
@@ -106,11 +103,13 @@ exports.getChannel = async (req, res) => {
   }
 };
 
-// JOIN CHANNEL
 exports.joinChannel = async (req, res) => {
   try {
     const identifier = safeTrim(req.params.id);
     const userId = req.userId;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
     let channel = null;
 
@@ -125,24 +124,37 @@ exports.joinChannel = async (req, res) => {
 
     if (!channel) return res.status(404).json({ error: "Channel not found" });
 
+    const members = (channel.members || []).map(String);
+    const invited = (channel.invitedUsers || []).map(String);
+    const isMember = members.includes(String(userId));
+    const isOwner = String(channel.createdBy) === String(userId);
+    const isInvited = invited.includes(String(userId));
+
     if (channel.capacity > 0 && channel.members.length >= channel.capacity) {
       return res.status(403).json({ error: "Channel capacity reached" });
     }
 
-    if (channel.isPrivate) {
-      const invited = (channel.invitedUsers || []).map(String);
-      const allowed = invited.includes(String(userId)) || String(channel.createdBy) === String(userId);
-      if (!allowed) return res.status(403).json({ error: "Not invited to join this private channel" });
+    if (channel.isPrivate && !isMember && !isOwner && !isInvited) {
+      return res.status(403).json({ error: "Request required", code: "PRIVATE_CHANNEL" });
     }
 
-    const stringMembers = (channel.members || []).map(String);
-    if (!stringMembers.includes(String(userId))) {
-      channel.members.push(userId);
+    if (isMember) {
+      const populated = await Channel.findById(channel._id)
+        .populate("members", "username name email profileUrl isOnline lastSeen")
+        .populate("leftMembers", "username name email profileUrl isOnline lastSeen")
+        .populate("createdBy", "username name email profileUrl")
+        .lean();
+
+      const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
+      const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
+      const combined = [...activeMembers, ...leftMembers];
+
+      return res.json({ ...populated, members: combined });
     }
 
+    channel.members.push(userId);
     if (!Array.isArray(channel.leftMembers)) channel.leftMembers = [];
     channel.leftMembers = channel.leftMembers.filter((m) => String(m) !== String(userId));
-
     await channel.save();
 
     const populated = await Channel.findById(channel._id)
@@ -151,14 +163,14 @@ exports.joinChannel = async (req, res) => {
       .populate("createdBy", "username name email profileUrl")
       .lean();
 
-    const activeMembers = (populated.members || []).map(m => ({ ...m, active: true }));
-    const leftMembers = (populated.leftMembers || []).map(m => ({ ...m, active: false }));
+    const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
+    const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
     try {
-      const io = req.app && req.app.get && req.app.get('io');
-      if (io) io.to(`channel:${String(channel._id)}`).emit('channel:member-joined', { channelId: channel._id, userId });
-    } catch (e) {}
+      const io = req.app && req.app.get && req.app.get("io");
+      if (io) io.to(`channel:${String(channel._id)}`).emit("channel:member-joined", { channelId: channel._id, userId });
+    } catch (_) {}
 
     return res.json({ ...populated, members: combined });
   } catch (err) {
@@ -167,7 +179,6 @@ exports.joinChannel = async (req, res) => {
   }
 };
 
-// LEAVE CHANNEL
 exports.leaveChannel = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -194,14 +205,14 @@ exports.leaveChannel = async (req, res) => {
       .populate("createdBy", "username name email profileUrl")
       .lean();
 
-    const activeMembers = (populated.members || []).map(m => ({ ...m, active: true }));
-    const leftMembers = (populated.leftMembers || []).map(m => ({ ...m, active: false }));
+    const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
+    const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
     try {
-      const io = req.app && req.app.get && req.app.get('io');
-      if (io) io.to(`channel:${String(channel._id)}`).emit('channel:member-left', { channelId: channel._id, userId });
-    } catch (e) {}
+      const io = req.app && req.app.get && req.app.get("io");
+      if (io) io.to(`channel:${String(channel._id)}`).emit("channel:member-left", { channelId: channel._id, userId });
+    } catch (_) {}
 
     return res.json({ ...populated, members: combined });
   } catch (err) {
@@ -210,27 +221,42 @@ exports.leaveChannel = async (req, res) => {
   }
 };
 
-// GET ALL CHANNELS USER CAN SEE
 exports.getChannels = async (req, res) => {
   try {
     const userId = req.userId;
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    const channels = await Channel.find({
-      $or: [{ isPrivate: false }, { members: userId }]
-    })
+    const channels = await Channel.find({})
       .sort({ createdAt: -1 })
       .populate("createdBy", "username name email profileUrl")
-      .populate("members", "username name email profileUrl isOnline lastSeen")
       .lean();
 
-    return res.json({ channels });
+    const mapped = channels.map((ch) => {
+      const members = (ch.members || []).map(String);
+      const invited = (ch.invitedUsers || []).map(String);
+      const isMember = members.includes(String(userId));
+      const isOwner = String(ch.createdBy) === String(userId);
+      const isInvited = invited.includes(String(userId));
+      const canJoin = !ch.isPrivate || isOwner || isMember || isInvited;
+
+      return {
+        ...ch,
+        isMember,
+        isOwner,
+        isInvited,
+        canJoin
+      };
+    });
+
+    return res.json({ channels: mapped });
   } catch (err) {
     console.error("getChannels error", err);
     return res.status(500).json({ error: "Server error" });
   }
 };
 
-// GET MY CHANNELS
 exports.getMyChannels = async (req, res) => {
   try {
     const userId = req.userId;
@@ -248,7 +274,6 @@ exports.getMyChannels = async (req, res) => {
   }
 };
 
-// GET CHANNEL MEMBERS
 exports.getChannelMembers = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -260,8 +285,8 @@ exports.getChannelMembers = async (req, res) => {
 
     if (!channel) return res.status(404).json({ error: "Channel not found" });
 
-    const activeMembers = (channel.members || []).map(m => ({ ...m, active: true }));
-    const leftMembers = (channel.leftMembers || []).map(m => ({ ...m, active: false }));
+    const activeMembers = (channel.members || []).map((m) => ({ ...m, active: true }));
+    const leftMembers = (channel.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
     return res.json({ members: combined || [] });
@@ -271,7 +296,6 @@ exports.getChannelMembers = async (req, res) => {
   }
 };
 
-// INVITE
 exports.inviteUser = async (req, res) => {
   try {
     const channelId = req.params.id;
@@ -297,7 +321,6 @@ exports.inviteUser = async (req, res) => {
   }
 };
 
-// DELETE
 exports.deleteChannel = async (req, res) => {
   try {
     const channelId = req.params.id;

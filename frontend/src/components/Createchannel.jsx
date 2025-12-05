@@ -1,13 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-
 export default function CreateChannel({ onClose }) {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
   const token = localStorage.getItem("token");
   const navigate = useNavigate();
 
-  
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState(50);
   const [isPrivate, setIsPrivate] = useState(false);
@@ -21,10 +19,17 @@ export default function CreateChannel({ onClose }) {
     e?.preventDefault();
     setError(null);
 
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       setError("Channel name is required.");
       return;
     }
+
+    const payload = {
+      name: trimmedName,
+      isPrivate: !!isPrivate,
+      capacity: Number(capacity) || 0,
+    };
 
     setLoading(true);
     try {
@@ -34,11 +39,7 @@ export default function CreateChannel({ onClose }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: name.trim(),
-          isPrivate: Boolean(isPrivate),
-          capacity: Number(capacity) || 0,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -48,7 +49,7 @@ export default function CreateChannel({ onClose }) {
         return;
       }
 
-      setChannel(data); 
+      setChannel(data);
       setLoading(false);
     } catch (err) {
       console.error("Create channel error:", err);
@@ -162,7 +163,6 @@ export default function CreateChannel({ onClose }) {
     );
   }
 
-  // Create form
   return (
     <div className="max-w-xl mx-auto">
       <form
