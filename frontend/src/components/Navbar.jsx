@@ -126,7 +126,6 @@ export default function Navbar() {
         role="banner"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          {/* Logo */}
           <div className="flex items-center gap-3">
             <Link
               to="/"
@@ -139,9 +138,9 @@ export default function Navbar() {
               <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
                 WebChat
               </span>
-              <span className="hidden sm:inline text-xs text-slate-300">
+              {/* <span className="hidden sm:inline text-xs text-slate-300">
                 Realtime chat
-              </span>
+              </span> */}
             </Link>
           </div>
 

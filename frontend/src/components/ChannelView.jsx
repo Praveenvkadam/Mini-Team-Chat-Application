@@ -22,9 +22,14 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
   const [showJoinPopup, setShowJoinPopup] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+
   const headers = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${token}`
   };
 
   const fetchChannel = useCallback(async () => {
@@ -34,7 +39,11 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, { headers });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (!res.ok) {
         setChannelData(null);
         setError(data.error || data.message || `Failed to load channel (${res.status})`);
@@ -63,7 +72,11 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     try {
       const res = await fetch(`${API_URL}/api/messages/${channelId}`, { headers });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (res.status === 403) {
         setShowJoinPopup(true);
         setMessages([]);
@@ -89,6 +102,8 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     setText("");
     setShowJoinPopup(false);
     setShowEmojiPicker(false);
+    setEditingId(null);
+    setEditingText("");
     if (channelId) fetchChannel();
   }, [channelId, fetchChannel]);
 
@@ -115,10 +130,14 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/join`, {
         method: "POST",
-        headers,
+        headers
       });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (!res.ok) {
         setError(data.error || data.message || "Failed to join channel");
         setJoinLoading(false);
@@ -142,10 +161,14 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}/leave`, {
         method: "POST",
-        headers,
+        headers
       });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (!res.ok) {
         setError(data.error || data.message || "Failed to leave channel");
         return;
@@ -168,10 +191,14 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     try {
       const res = await fetch(`${API_URL}/api/channels/${channelId}`, {
         method: "DELETE",
-        headers,
+        headers
       });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (!res.ok) {
         alert(data.error || data.message || "Failed to delete channel");
         return;
@@ -196,10 +223,14 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
       const res = await fetch(`${API_URL}/api/messages`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ channelId, text }),
+        body: JSON.stringify({ channelId, text })
       });
       let data;
-      try { data = await res.json(); } catch { data = { message: await res.text() }; }
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
       if (res.status === 403) {
         setShowJoinPopup(true);
         setSending(false);
@@ -223,9 +254,82 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     setText((prev) => prev + (emojiData.emoji || ""));
   };
 
+  const startEditMessage = (m) => {
+    setEditingId(m._id);
+    setEditingText(m.text || "");
+    setError("");
+  };
+
+  const cancelEditMessage = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+
+  const saveEditMessage = async () => {
+    if (!editingId || !editingText.trim()) return;
+    setSavingEdit(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/messages/${editingId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ text: editingText })
+      });
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to update message");
+        setSavingEdit(false);
+        return;
+      }
+      setMessages((prev) =>
+        prev.map((m) => (m._id === editingId ? { ...m, text: data.text || editingText } : m))
+      );
+      setEditingId(null);
+      setEditingText("");
+    } catch {
+      setError("Network error updating message");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteMessage = async (id) => {
+    if (!id) return;
+    if (!window.confirm("Delete this message?")) return;
+    setDeletingId(id);
+    setError("");
+    try {
+      const res = await fetch(`${API_URL}/api/messages/${id}`, {
+        method: "DELETE",
+        headers
+      });
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: await res.text() };
+      }
+      if (!res.ok) {
+        setError(data.error || data.message || "Failed to delete message");
+        setDeletingId(null);
+        return;
+      }
+      setMessages((prev) => prev.filter((m) => m._id !== id));
+    } catch {
+      setError("Network error deleting message");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (!channelId)
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
+      <div className="flex-1 flex flex-col items-center justify-center text.center">
         <h2 className="text-2xl font-bold text-gray-800">Select a channel</h2>
         <p className="text-gray-600">Or join one by name or ID</p>
       </div>
@@ -298,7 +402,8 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
           <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
           messages.map((m) => {
-            const mine = m.sender && String(m.sender._id) === String(userId);
+            const mine = m.isMine === true;
+            const isEditing = editingId === m._id;
             return (
               <div
                 key={m._id}
@@ -306,10 +411,66 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
                   mine ? "ml-auto bg-blue-100" : "bg-gray-100"
                 }`}
               >
-                <div className="text-xs font-semibold text-gray-600 mb-0.5">
-                  {mine ? "You" : m.sender?.username || "User"}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-gray-600 mb-0.5">
+                      {mine ? "You" : m.sender?.username || "User"}
+                    </div>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={editingText}
+                        onChange={(e) => setEditingText(e.target.value)}
+                        className="w-full px-2 py-1 text-sm border rounded"
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>
+                    )}
+                  </div>
+
+                  {mine && isMember && (
+                    <div className="flex flex-col gap-1 shrink-0">
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={saveEditMessage}
+                            disabled={savingEdit}
+                            className="px-2 py-0.5 text-xs rounded bg-blue-600 text-white disabled:opacity-60"
+                          >
+                            {savingEdit ? "Saving" : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEditMessage}
+                            className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-700"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEditMessage(m)}
+                            className="px-2 py-0.5 text-xs rounded bg-blue-500 text-white"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteMessage(m._id)}
+                            disabled={deletingId === m._id}
+                            className="px-2 py-0.5 text-xs rounded bg-red-600 text-white disabled:opacity-60"
+                          >
+                            {deletingId === m._id ? "Deleting" : "Delete"}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>
               </div>
             );
           })

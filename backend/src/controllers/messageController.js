@@ -21,13 +21,21 @@ exports.getMessages = async (req, res) => {
 
     const messages = await Message.find({
       channel: channelId,
-      createdAt: { $lt: before },
+      createdAt: { $lt: before }
     })
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate('sender', 'username _id');
+      .populate('sender', 'username _id email');
 
-    return res.json(messages);
+    const result = messages.map((m) => {
+      const obj = m.toObject();
+      obj.isMine =
+        m.sender &&
+        String(m.sender._id) === String(userId);
+      return obj;
+    });
+
+    return res.json(result);
   } catch (err) {
     console.error('getMessages error', err);
     return res.status(500).json({ error: 'Server error' });
@@ -56,12 +64,14 @@ exports.postMessage = async (req, res) => {
     const msg = await Message.create({
       channel: channelId,
       sender,
-      text: String(text || ''),
+      text: String(text || '')
     });
 
-    const populated = await msg.populate('sender', 'username _id');
+    const populated = await msg.populate('sender', 'username _id email');
+    const obj = populated.toObject();
+    obj.isMine = true;
 
-    return res.status(201).json(populated);
+    return res.status(201).json(obj);
   } catch (err) {
     console.error('postMessage error', err);
     return res.status(500).json({ error: 'Server error' });
@@ -116,9 +126,11 @@ exports.editMessage = async (req, res) => {
 
     msg.text = String(text || '');
     await msg.save();
-    const populated = await msg.populate('sender', 'username _id');
+    const populated = await msg.populate('sender', 'username _id email');
+    const obj = populated.toObject();
+    obj.isMine = true;
 
-    return res.json(populated);
+    return res.json(obj);
   } catch (err) {
     console.error('editMessage error', err);
     return res.status(500).json({ error: 'Server error' });
