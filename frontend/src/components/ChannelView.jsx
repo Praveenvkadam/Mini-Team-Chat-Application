@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import EmojiPicker from "emoji-picker-react";
 import { socket } from "../socket";
 
@@ -26,6 +26,10 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
   const [editingText, setEditingText] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+
+  const [typingUsers, setTypingUsers] = useState({});
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
 
   const headers = {
     "Content-Type": "application/json",
@@ -104,6 +108,12 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     setShowEmojiPicker(false);
     setEditingId(null);
     setEditingText("");
+    setTypingUsers({});
+    setIsTyping(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
     if (channelId) fetchChannel();
   }, [channelId, fetchChannel]);
 
@@ -122,6 +132,29 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
       socket.emit("leave:channel", { channelId });
     };
   }, [channelId, channelData?.isMember]);
+
+  useEffect(() => {
+    if (!socket || !channelId) return;
+
+    const handleTyping = ({ userId: uid, username: uName, channelId: cid, isTyping }) => {
+      if (cid !== channelId) return;
+      if (!uid || uid === userId) return;
+      setTypingUsers(prev => {
+        const next = { ...prev };
+        if (isTyping) {
+          next[uid] = uName || "User";
+        } else {
+          delete next[uid];
+        }
+        return next;
+      });
+    };
+
+    socket.on("typing", handleTyping);
+    return () => {
+      socket.off("typing", handleTyping);
+    };
+  }, [channelId, userId]);
 
   const handleJoin = async () => {
     if (!channelId) return;
@@ -243,6 +276,15 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
       }
       setMessages((prev) => [...prev, data]);
       setText("");
+
+      if (isTyping) {
+        setIsTyping(false);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+          typingTimeoutRef.current = null;
+        }
+        socket.emit("typing", { channelId, isTyping: false });
+      }
     } catch {
       setError("Network error sending message");
     } finally {
@@ -252,6 +294,29 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
 
   const handleEmojiClick = (emojiData) => {
     setText((prev) => prev + (emojiData.emoji || ""));
+  };
+
+  const handleChangeText = (e) => {
+    const value = e.target.value;
+    setText(value);
+
+    const isMember = !!channelData?.isMember;
+    if (!socket || !channelId || !isMember) return;
+
+    if (!isTyping) {
+      setIsTyping(true);
+      socket.emit("typing", { channelId, isTyping: true });
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTyping(false);
+      socket.emit("typing", { channelId, isTyping: false });
+      typingTimeoutRef.current = null;
+    }, 1200);
   };
 
   const startEditMessage = (m) => {
@@ -351,6 +416,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
 
   const isMember = !!channelData.isMember;
   const isOwner = channelData.isOwner === true;
+  const typingNames = Object.values(typingUsers);
 
   return (
     <div className="relative flex-1 flex flex-col">
@@ -401,79 +467,87 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
         ) : messages.length === 0 ? (
           <div className="text-gray-400 text-sm">No messages yet.</div>
         ) : (
-          messages.map((m) => {
-            const mine = m.isMine === true;
-            const isEditing = editingId === m._id;
-            return (
-              <div
-                key={m._id}
-                className={`px-3 py-2 rounded-lg max-w-xl ${
-                  mine ? "ml-auto bg-blue-100" : "bg-gray-100"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold text-gray-600 mb-0.5">
-                      {mine ? "You" : m.sender?.username || "User"}
-                    </div>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editingText}
-                        onChange={(e) => setEditingText(e.target.value)}
-                        className="w-full px-2 py-1 text-sm border rounded"
-                        autoFocus
-                      />
-                    ) : (
-                      <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>
-                    )}
-                  </div>
-
-                  {mine && isMember && (
-                    <div className="flex flex-col gap-1 shrink-0">
+          <>
+            {messages.map((m) => {
+              const mine = m.isMine === true;
+              const isEditing = editingId === m._id;
+              return (
+                <div
+                  key={m._id}
+                  className={`px-3 py-2 rounded-lg max-w-xl ${
+                    mine ? "ml-auto bg-blue-100" : "bg-gray-100"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="text-xs font-semibold text-gray-600 mb-0.5">
+                        {mine ? "You" : m.sender?.username || "User"}
+                      </div>
                       {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={saveEditMessage}
-                            disabled={savingEdit}
-                            className="px-2 py-0.5 text-xs rounded bg-blue-600 text-white disabled:opacity-60"
-                          >
-                            {savingEdit ? "Saving" : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={cancelEditMessage}
-                            className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-700"
-                          >
-                            Cancel
-                          </button>
-                        </>
+                        <input
+                          type="text"
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          className="w-full px-2 py-1 text-sm border rounded"
+                          autoFocus
+                        />
                       ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => startEditMessage(m)}
-                            className="px-2 py-0.5 text-xs rounded bg-blue-500 text-white"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteMessage(m._id)}
-                            disabled={deletingId === m._id}
-                            className="px-2 py-0.5 text-xs rounded bg-red-600 text-white disabled:opacity-60"
-                          >
-                            {deletingId === m._id ? "Deleting" : "Delete"}
-                          </button>
-                        </>
+                        <div className="text-sm text-gray-900 whitespace-pre-wrap">{m.text}</div>
                       )}
                     </div>
-                  )}
+
+                    {mine && isMember && (
+                      <div className="flex flex-col gap-1 shrink-0">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={saveEditMessage}
+                              disabled={savingEdit}
+                              className="px-2 py-0.5 text-xs rounded bg-blue-600 text-white disabled:opacity-60"
+                            >
+                              {savingEdit ? "Saving" : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditMessage}
+                              className="px-2 py-0.5 text-xs rounded bg-gray-200 text-gray-700"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => startEditMessage(m)}
+                              className="px-2 py-0.5 text-xs rounded bg-blue-500 text-white"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMessage(m._id)}
+                              disabled={deletingId === m._id}
+                              className="px-2 py-0.5 text-xs rounded bg-red-600 text-white disabled:opacity-60"
+                            >
+                              {deletingId === m._id ? "Deleting" : "Delete"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+
+            {typingNames.length > 0 && (
+              <div className="px-3 text-xs text-gray-500 italic">
+                {typingNames.join(", ")} is typing...
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
 
@@ -489,7 +563,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={handleChangeText}
           disabled={!isMember}
           placeholder={isMember ? "Type a message..." : "Join this channel to send messages"}
           className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
