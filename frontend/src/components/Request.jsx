@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { socket, ensureSocketConnected } from "../socket";
 
 export default function RequestPage() {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3002";
@@ -15,18 +16,32 @@ export default function RequestPage() {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
 
+  const [token, setToken] = useState(() => localStorage.getItem("token") || "");
+
+  // load user + token
   useEffect(() => {
     try {
       const raw = localStorage.getItem("user");
       const parsed = raw ? JSON.parse(raw) : null;
-      setUser(parsed);
+      setUser(parsed || null);
     } catch (e) {
       console.error("Failed to parse user", e);
+      setUser(null);
     }
+    const t = localStorage.getItem("token") || "";
+    setToken(t);
   }, []);
 
-  const token = localStorage.getItem("token") || "";
+  const userIdStr =
+    user ? String(user._id || user.id || user.userId || "") : "";
 
+  // ensure socket connection
+  useEffect(() => {
+    if (!token) return;
+    ensureSocketConnected();
+  }, [token]);
+
+  // load initial requests
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const k = params.get("channelKey") || "";
@@ -79,7 +94,73 @@ export default function RequestPage() {
     if (reqId) {
       loadById(reqId);
     }
-  }, [location.search, API_URL, token]);
+  }, [location.search, API_URL, token]); // not depending on selectedRequest
+
+  // REAL-TIME socket updates
+  useEffect(() => {
+    if (!socket || !userIdStr) return;
+
+    const isMine = (req) => {
+      if (!req) return false;
+      const requesterId = req.requester?._id
+        ? String(req.requester._id)
+        : req.requesterId
+        ? String(req.requesterId)
+        : "";
+      const creatorId = req.creator?._id
+        ? String(req.creator._id)
+        : req.creatorId
+        ? String(req.creatorId)
+        : "";
+      return userIdStr === requesterId || userIdStr === creatorId;
+    };
+
+    const handleUpdated = (req) => {
+      if (!req || !req._id) return;
+      if (!isMine(req)) return;
+
+      setRequests((prev) => {
+        // if resolved, remove from list
+        if (req.status && req.status !== "pending") {
+          return prev.filter((r) => String(r._id) !== String(req._id));
+        }
+        const exists = prev.some((r) => String(r._id) === String(req._id));
+        if (!exists) return [req, ...prev];
+        return prev.map((r) =>
+          String(r._id) === String(req._id) ? req : r
+        );
+      });
+
+      setSelectedRequest((prev) => {
+        if (!prev) return prev;
+        if (String(prev._id) !== String(req._id)) return prev;
+        // if resolved, close details
+        if (req.status && req.status !== "pending") return null;
+        return req;
+      });
+    };
+
+    const handleCreated = (req) => {
+      if (!req || !req._id) return;
+      if (!isMine(req)) return;
+
+      setRequests((prev) => {
+        const exists = prev.some((r) => String(r._id) === String(req._id));
+        if (exists) return prev;
+        return [req, ...prev];
+      });
+
+      setSelectedRequest((prev) => prev || req);
+    };
+
+    socket.on("private-request:updated", handleUpdated);
+    socket.on("private-request:created", handleCreated);
+
+    return () => {
+      socket.off("private-request:updated", handleUpdated);
+      socket.off("private-request:created", handleCreated);
+    };
+  }, [userIdStr]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -132,8 +213,6 @@ export default function RequestPage() {
     }
   };
 
-  const userIdStr = user ? String(user._id || user.id || user.userId || "") : "";
-
   const creatorIdStr =
     selectedRequest && selectedRequest.creator
       ? String(
@@ -176,10 +255,25 @@ export default function RequestPage() {
         setActionLoading(false);
         return;
       }
-      setSelectedRequest(data);
-      setRequests((prev) =>
-        prev.map((r) => (String(r._id) === String(data._id) ? data : r))
-      );
+
+      // update local state
+      setRequests((prev) => {
+        if (data.status && data.status !== "pending") {
+          // remove resolved
+          return prev.filter((r) => String(r._id) !== String(data._id));
+        }
+        return prev.map((r) =>
+          String(r._id) === String(data._id) ? data : r
+        );
+      });
+
+      // if resolved, close details; else keep
+      if (data.status && data.status !== "pending") {
+        setSelectedRequest(null);
+      } else {
+        setSelectedRequest(data);
+      }
+
       setActionLoading(false);
     } catch (err) {
       console.error("Action error:", err);
@@ -209,6 +303,11 @@ export default function RequestPage() {
       </span>
     );
   };
+
+  // Only pending requests in "Your Requests" list
+  const pendingRequests = requests.filter(
+    (r) => (r.status || "pending") === "pending"
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 pt-20 px-4">
@@ -389,13 +488,13 @@ export default function RequestPage() {
           <h2 className="text-sm font-semibold text-slate-100">
             Your Requests
           </h2>
-          {requests.length === 0 ? (
+          {pendingRequests.length === 0 ? (
             <div className="text-xs text-slate-400">
-              You have not sent or received any private channel requests yet.
+              You have no pending private channel requests.
             </div>
           ) : (
             <div className="space-y-2">
-              {requests.map((req) => {
+              {pendingRequests.map((req) => {
                 const isReq =
                   userIdStr &&
                   (req.requester?._id

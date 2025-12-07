@@ -14,6 +14,67 @@ const getUserId = (req) => {
   return null;
 };
 
+// ---- SOCKET HELPERS ----
+const emitPrivateRequestEvent = (req, type, requestDoc) => {
+  try {
+    const io = req.app && req.app.get && req.app.get("io");
+    if (!io || !requestDoc) return;
+
+    const payload =
+      typeof requestDoc.toObject === "function"
+        ? requestDoc.toObject()
+        : requestDoc;
+
+    if (type === "created") {
+      io.emit("private-request:created", payload);
+    } else if (type === "updated") {
+      io.emit("private-request:updated", payload);
+    }
+  } catch (_) {
+    // ignore socket errors
+  }
+};
+
+// broadcast updated channel state for sidebars
+const emitChannelState = async (req, channelId) => {
+  try {
+    const io = req.app && req.app.get && req.app.get("io");
+    if (!io || !channelId) return;
+
+    const populated = await Channel.findById(channelId)
+      .populate("createdBy", "username name email profileUrl")
+      .populate("members", "username name email profileUrl isOnline lastSeen")
+      .populate("leftMembers", "username name email profileUrl isOnline lastSeen")
+      .lean();
+
+    if (!populated) return;
+
+    const activeMembers = (populated.members || []).map((m) => ({
+      ...m,
+      active: true,
+    }));
+    const leftMembers = (populated.leftMembers || []).map((m) => ({
+      ...m,
+      active: false,
+    }));
+    const combined = [...activeMembers, ...leftMembers];
+    const channelIdStr = String(populated._id);
+
+    // left sidebar
+    io.emit("channel:updated", { ...populated, members: combined });
+
+    // right members sidebar (only users in that room)
+    io.to(`channel:${channelIdStr}`).emit("channel:members", {
+      channelId: channelIdStr,
+      members: combined,
+    });
+  } catch (_) {
+    // ignore socket errors
+  }
+};
+
+// ---- CONTROLLERS ----
+
 async function createPrivateRequest(req, res) {
   try {
     const userId = getUserId(req);
@@ -72,6 +133,9 @@ async function createPrivateRequest(req, res) {
       .populate("channel", "name isPrivate capacity members createdBy")
       .populate("requester", "username email")
       .populate("creator", "username email");
+
+    // SOCKET: notify requester + creator (frontend filters)
+    emitPrivateRequestEvent(req, "created", populated);
 
     return res.status(201).json(populated);
   } catch (err) {
@@ -207,12 +271,18 @@ async function updatePrivateRequestStatus(req, res) {
         .json({ error: `Request already ${request.status}` });
     }
 
+    // REJECT
     if (action === "reject") {
       request.status = "rejected";
       await request.save();
+
+      // SOCKET: updated request
+      emitPrivateRequestEvent(req, "updated", request);
+
       return res.json(request);
     }
 
+    // APPROVE
     const channel = await Channel.findById(request.channel._id);
     if (!channel) {
       return res.status(404).json({ error: "Channel not found" });
@@ -238,10 +308,16 @@ async function updatePrivateRequestStatus(req, res) {
       channel.members = channel.members || [];
       channel.members.push(request.requester._id);
       await channel.save();
+
+      // SOCKET: update channel members sidebars because membership changed
+      await emitChannelState(req, channel._id);
     }
 
     request.status = "approved";
     await request.save();
+
+    // SOCKET: updated request (status changed)
+    emitPrivateRequestEvent(req, "updated", request);
 
     return res.json(request);
   } catch (err) {
