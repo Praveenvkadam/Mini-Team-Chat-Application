@@ -1,3 +1,4 @@
+// src/controllers/messageController.js
 const Message = require('../models/Message');
 const Channel = require('../models/Channel');
 
@@ -13,7 +14,9 @@ exports.getMessages = async (req, res) => {
 
     const isMember = channel.members.map(String).includes(String(userId));
     if (!isMember) {
-      return res.status(403).json({ error: 'You are not a member of this channel' });
+      return res
+        .status(403)
+        .json({ error: 'You are not a member of this channel' });
     }
 
     const limit = Math.min(100, parseInt(req.query.limit || '30', 10));
@@ -21,7 +24,7 @@ exports.getMessages = async (req, res) => {
 
     const messages = await Message.find({
       channel: channelId,
-      createdAt: { $lt: before }
+      createdAt: { $lt: before },
     })
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -30,8 +33,7 @@ exports.getMessages = async (req, res) => {
     const result = messages.map((m) => {
       const obj = m.toObject();
       obj.isMine =
-        m.sender &&
-        String(m.sender._id) === String(userId);
+        m.sender && String(m.sender._id) === String(userId);
       return obj;
     });
 
@@ -58,18 +60,26 @@ exports.postMessage = async (req, res) => {
 
     const isMember = channel.members.map(String).includes(String(sender));
     if (!isMember) {
-      return res.status(403).json({ error: 'You are not a member of this channel' });
+      return res
+        .status(403)
+        .json({ error: 'You are not a member of this channel' });
     }
 
     const msg = await Message.create({
       channel: channelId,
       sender,
-      text: String(text || '')
+      text: String(text || ''),
     });
 
     const populated = await msg.populate('sender', 'username _id email');
     const obj = populated.toObject();
     obj.isMine = true;
+
+    // broadcast new message
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('message:received', obj);
+    }
 
     return res.status(201).json(obj);
   } catch (err) {
@@ -93,10 +103,18 @@ exports.deleteMessage = async (req, res) => {
     }
 
     if (msg.sender.toString() !== userId.toString()) {
-      return res.status(403).json({ error: 'Not allowed to delete this message' });
+      return res
+        .status(403)
+        .json({ error: 'Not allowed to delete this message' });
     }
 
+    const channelId = msg.channel.toString();
     await Message.deleteOne({ _id: messageId });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('message:deleted', { messageId });
+    }
 
     return res.json({ success: true, messageId });
   } catch (err) {
@@ -121,14 +139,24 @@ exports.editMessage = async (req, res) => {
     }
 
     if (msg.sender.toString() !== userId.toString()) {
-      return res.status(403).json({ error: 'Not allowed to edit this message' });
+      return res
+        .status(403)
+        .json({ error: 'Not allowed to edit this message' });
     }
 
     msg.text = String(text || '');
     await msg.save();
+
     const populated = await msg.populate('sender', 'username _id email');
     const obj = populated.toObject();
     obj.isMine = true;
+
+    const channelId = msg.channel.toString();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`channel:${channelId}`).emit('message:updated', obj);
+    }
 
     return res.json(obj);
   } catch (err) {

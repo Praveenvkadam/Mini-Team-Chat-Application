@@ -4,6 +4,31 @@ const mongoose = require("mongoose");
 
 const safeTrim = (v) => (typeof v === "string" ? v.trim() : v);
 
+const emitChannelState = (req, channelDoc, combinedMembers) => {
+  try {
+    const io = req.app && req.app.get && req.app.get("io");
+    if (!io || !channelDoc) return;
+
+    const channelId = String(channelDoc._id);
+
+    // send full channel object (for left sidebar)
+    const channelSafe = {
+      ...channelDoc,
+      members: combinedMembers,
+    };
+
+    io.emit("channel:updated", channelSafe);
+
+    // send members list only (for right sidebar)
+    io.to(`channel:${channelId}`).emit("channel:members", {
+      channelId,
+      members: combinedMembers,
+    });
+  } catch {
+    // ignore socket errors
+  }
+};
+
 exports.createChannel = async (req, res) => {
   try {
     const creatorId = req.userId;
@@ -39,6 +64,9 @@ exports.createChannel = async (req, res) => {
     const activeMembers = (populated.members || []).map((m) => ({ ...m, active: true }));
     const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
+
+    // broadcast new channel + members
+    emitChannelState(req, populated, combined);
 
     return res.status(201).json({ ...populated, members: combined });
   } catch (err) {
@@ -138,6 +166,7 @@ exports.joinChannel = async (req, res) => {
       return res.status(403).json({ error: "Request required", code: "PRIVATE_CHANNEL" });
     }
 
+    // already a member -> just return state, no broadcast
     if (isMember) {
       const populated = await Channel.findById(channel._id)
         .populate("members", "username name email profileUrl isOnline lastSeen")
@@ -152,6 +181,7 @@ exports.joinChannel = async (req, res) => {
       return res.json({ ...populated, members: combined });
     }
 
+    // newly joining
     channel.members.push(userId);
     if (!Array.isArray(channel.leftMembers)) channel.leftMembers = [];
     channel.leftMembers = channel.leftMembers.filter((m) => String(m) !== String(userId));
@@ -167,10 +197,19 @@ exports.joinChannel = async (req, res) => {
     const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
+    // OLD event (not used by frontend now, but harmless)
     try {
       const io = req.app && req.app.get && req.app.get("io");
-      if (io) io.to(`channel:${String(channel._id)}`).emit("channel:member-joined", { channelId: channel._id, userId });
+      if (io) {
+        io.to(`channel:${String(channel._id)}`).emit("channel:member-joined", {
+          channelId: channel._id,
+          userId,
+        });
+      }
     } catch (_) {}
+
+    // NEW: broadcast full updated state for sidebars
+    emitChannelState(req, populated, combined);
 
     return res.json({ ...populated, members: combined });
   } catch (err) {
@@ -209,10 +248,19 @@ exports.leaveChannel = async (req, res) => {
     const leftMembers = (populated.leftMembers || []).map((m) => ({ ...m, active: false }));
     const combined = [...activeMembers, ...leftMembers];
 
+    // OLD event (unused in frontend)
     try {
       const io = req.app && req.app.get && req.app.get("io");
-      if (io) io.to(`channel:${String(channel._id)}`).emit("channel:member-left", { channelId: channel._id, userId });
+      if (io) {
+        io.to(`channel:${String(channel._id)}`).emit("channel:member-left", {
+          channelId: channel._id,
+          userId,
+        });
+      }
     } catch (_) {}
+
+    // NEW: broadcast full updated state for sidebars
+    emitChannelState(req, populated, combined);
 
     return res.json({ ...populated, members: combined });
   } catch (err) {
@@ -334,6 +382,15 @@ exports.deleteChannel = async (req, res) => {
     }
 
     await Channel.deleteOne({ _id: channelId });
+
+    // broadcast delete
+    try {
+      const io = req.app && req.app.get && req.app.get("io");
+      if (io) {
+        io.emit("channel:deleted", { channelId: String(channelId) });
+      }
+    } catch (_) {}
+
     return res.json({ message: "Channel deleted" });
   } catch (err) {
     console.error("deleteChannel error", err);

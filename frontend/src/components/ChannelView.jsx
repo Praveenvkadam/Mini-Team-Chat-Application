@@ -31,6 +31,8 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
 
+  const messagesEndRef = useRef(null);
+
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`
@@ -156,6 +158,75 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
     };
   }, [channelId, userId]);
 
+  // REAL-TIME MESSAGE EVENTS
+  useEffect(() => {
+    if (!socket || !channelId) return;
+
+    const handleReceived = (msg) => {
+      const cid =
+        typeof msg.channel === "string"
+          ? msg.channel
+          : msg.channel?._id;
+
+      if (cid !== channelId) return;
+
+      const mine =
+        msg.sender && String(msg.sender._id) === String(userId);
+
+      const normalized = { ...msg, isMine: mine };
+
+      setMessages((prev) => {
+        if (prev.some((m) => m._id === normalized._id)) return prev;
+        return [...prev, normalized];
+      });
+    };
+
+    const handleUpdated = (msg) => {
+      const cid =
+        typeof msg.channel === "string"
+          ? msg.channel
+          : msg.channel?._id;
+
+      if (cid !== channelId) return;
+
+      const mine =
+        msg.sender && String(msg.sender._id) === String(userId);
+
+      const normalized = { ...msg, isMine: mine };
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === normalized._id ? { ...m, ...normalized } : m
+        )
+      );
+    };
+
+    const handleDeleted = ({ messageId }) => {
+      if (!messageId) return;
+      setMessages((prev) => prev.filter((m) => m._id !== messageId));
+    };
+
+    socket.on("message:received", handleReceived);
+    socket.on("message:updated", handleUpdated);
+    socket.on("message:deleted", handleDeleted);
+
+    return () => {
+      socket.off("message:received", handleReceived);
+      socket.off("message:updated", handleUpdated);
+      socket.off("message:deleted", handleDeleted);
+    };
+  }, [channelId, userId]);
+
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   const handleJoin = async () => {
     if (!channelId) return;
     setJoinLoading(true);
@@ -274,6 +345,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
         setSending(false);
         return;
       }
+      // local optimistic update
       setMessages((prev) => [...prev, data]);
       setText("");
 
@@ -419,7 +491,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
   const typingNames = Object.values(typingUsers);
 
   return (
-    <div className="relative flex-1 flex flex-col">
+    <div className="relative flex-1 flex flex-col min-h-0">
       <div className="flex items-center justify-between pb-3 border-b">
         <div>
           <h2 className="text-xl font-semibold text-gray-800">{channelData.name}</h2>
@@ -459,7 +531,7 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-3 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto py-3 space-y-3">
         {loadingMessages ? (
           <div className="text-gray-500 text-sm">Loading messages...</div>
         ) : !isMember ? (
@@ -547,6 +619,8 @@ export default function ChannelView({ channel, onRemoved, onMembershipChange }) 
                 {typingNames.join(", ")} is typing...
               </div>
             )}
+
+            <div ref={messagesEndRef} />
           </>
         )}
       </div>
